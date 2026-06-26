@@ -598,6 +598,7 @@
           if (result && result.data) {
             onScanSuccess(result.data);
             flashScannerFrame();
+            closeScanner(); // 🎯 レジゴー風：読み取り成功したら自動でカメラを閉じる
           }
         }
       }

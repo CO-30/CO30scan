@@ -572,22 +572,32 @@
       if (video.readyState === video.HAVE_ENOUGH_DATA) {
         const vw = video.videoWidth, vh = video.videoHeight;
         if (vw && vh) {
-          const scale = Math.min(1, 480 / vw);
-          const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
-          canvas.width = cw;
-          canvas.height = ch;
-          const ctx = canvas.getContext("2d", { willReadFrequently: true });
-          ctx.drawImage(video, 0, 0, cw, ch);
+          // 複数の解像度で試行する。フレームごとに違うサイズを試すことで、
+          // 大きいQR・小さいQR・遠いQR・近いQR どれにも対応できるようにする。
+          const targetWidths = [vw, 800, 480];
+          let result = null;
 
-          try {
-            const imageData = ctx.getImageData(0, 0, cw, ch);
-            const result = jsQR(imageData.data, cw, ch, { inversionAttempts: "attemptBoth" });
-            if (result && result.data) {
-              onScanSuccess(result.data);
-              flashScannerFrame();
+          for (const targetW of targetWidths) {
+            const scale = Math.min(1, targetW / vw);
+            const cw = Math.round(vw * scale);
+            const ch = Math.round(vh * scale);
+            canvas.width = cw;
+            canvas.height = ch;
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            ctx.drawImage(video, 0, 0, cw, ch);
+
+            try {
+              const imageData = ctx.getImageData(0, 0, cw, ch);
+              result = jsQR(imageData.data, cw, ch, { inversionAttempts: "attemptBoth" });
+              if (result && result.data) break;
+            } catch (e) {
+              // このサイズでは失敗。次のサイズへ
             }
-          } catch (e) {
-            // 一時的なエラーは無視
+          }
+
+          if (result && result.data) {
+            onScanSuccess(result.data);
+            flashScannerFrame();
           }
         }
       }

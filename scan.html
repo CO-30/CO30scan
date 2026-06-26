@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CO-30 現場検品スキャナー</title>
+
+  <!-- jsQR ライブラリ：GitHub PagesはCDNブロックに引っかからないドメインなので、CDNから直接読み込んでOK -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f4f6f7;
+      margin: 0;
+      padding: 0;
+      color: #333;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .header-panel {
+      background-color: #f39c12;
+      color: #fff;
+      padding: 15px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-title { font-size: 14px; font-weight: bold; }
+    .header-counter { display: flex; align-items: center; gap: 10px; }
+    .counter-badge {
+      background: #fff;
+      color: #f39c12;
+      font-size: 24px;
+      font-weight: bold;
+      padding: 4px 16px;
+      border-radius: 8px;
+      min-width: 40px;
+      text-align: center;
+    }
+    .location-bar {
+      background-color: #eeb95d;
+      color: #fff;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .scan-box {
+      background: #fff;
+      width: 100%;
+      padding: 18px 14px;
+      text-align: center;
+      border-bottom: 1px solid #eee;
+    }
+    .btn-camera-main {
+      background: #f39c12;
+      color: #fff;
+      border: none;
+      font-size: 16px;
+      font-weight: bold;
+      padding: 16px 24px;
+      border-radius: 30px;
+      width: 100%;
+      max-width: 360px;
+      box-shadow: 0 3px 8px rgba(243,156,18,0.4);
+    }
+    .btn-camera-main:active { opacity: 0.8; }
+    .scan-hint { margin-top: 8px; font-size: 12px; color: #999; }
+
+    .item-list-container { padding: 12px; padding-bottom: 100px; }
+    .empty-hint {
+      text-align: center; color: #aaa;
+      padding: 40px 20px; font-size: 14px; line-height: 1.6;
+    }
+    .item-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-left: 6px solid #ccc;
+      transition: opacity 0.15s;
+      animation: slideIn 0.25s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .item-card.completed { border-left-color: #2ecc71; background-color: #f0fff5; }
+    .item-card.syncing { opacity: 0.5; }
+    .item-card.latest { border-left-color: #f39c12; box-shadow: 0 2px 8px rgba(243,156,18,0.3); }
+    .item-info { flex: 1; }
+    .item-name { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+    .item-code { font-size: 11px; color: #7f8c8d; }
+    .item-status-text { font-size: 12px; font-weight: bold; margin-top: 4px; }
+    .status-wait { color: #e67e22; }
+    .status-ok { color: #2ecc71; }
+    .qty-controls {
+      display: flex; align-items: center; gap: 6px;
+      background: #f0f3f4; padding: 5px 10px; border-radius: 24px;
+    }
+    .btn-qty {
+      background: #fff; border: 1px solid #bdc3c7;
+      width: 40px; height: 40px; border-radius: 50%;
+      font-size: 18px; font-weight: bold;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-qty:disabled { opacity: 0.4; }
+    .qty-display { font-size: 16px; font-weight: bold; min-width: 48px; text-align: center; }
+
+    .footer-panel {
+      position: fixed; bottom: 0; left: 0; width: 100%;
+      background: #fff; box-shadow: 0 -3px 10px rgba(0,0,0,0.1);
+      padding: 10px 0; display: flex; justify-content: space-around; align-items: center;
+      z-index: 100;
+    }
+    .btn-footer {
+      display: flex; flex-direction: column; align-items: center;
+      background: none; border: none; font-size: 12px; font-weight: bold; color: #34495e;
+      width: 45%; padding: 8px;
+    }
+    .btn-footer-main { background-color: #f39c12; color: white; border-radius: 25px; padding: 10px 20px; font-size: 15px; }
+
+    .toast {
+      position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.85); color: #fff; padding: 10px 20px;
+      border-radius: 20px; font-size: 14px; z-index: 1000;
+      display: none; text-align: center; max-width: 85%;
+    }
+    .loading-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(255,255,255,0.7); z-index: 2000;
+      display: flex; justify-content: center; align-items: center;
+      font-weight: bold; font-size: 16px; color: #f39c12;
+    }
+    .hidden { display: none; }
+
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5); z-index: 3000;
+      display: none; justify-content: center; align-items: center; padding: 20px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: #fff; border-radius: 16px; padding: 22px;
+      width: 100%; max-width: 340px; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; color: #333; }
+    .modal-message { font-size: 14px; color: #555; margin-bottom: 16px; line-height: 1.6; white-space: pre-wrap; }
+    .modal-input {
+      width: 100%; box-sizing: border-box; font-size: 16px;
+      padding: 12px; border: 1px solid #ccc; border-radius: 10px; margin-bottom: 16px;
+    }
+    .modal-input:focus { outline: 2px solid #f39c12; border-color: #f39c12; }
+    .modal-buttons { display: flex; gap: 10px; }
+    .modal-btn {
+      flex: 1; padding: 12px; border-radius: 10px;
+      font-size: 15px; font-weight: bold; border: none;
+    }
+    .modal-btn-cancel { background: #f0f3f4; color: #555; }
+    .modal-btn-confirm { background: #f39c12; color: #fff; }
+
+    /* ===== ライブスキャナー ===== */
+    #scannerOverlay {
+      z-index: 4000;
+      background: rgba(0,0,0,0.92);
+      flex-direction: column;
+    }
+    .scanner-wrap { position: relative; width: 100%; max-width: 480px; }
+    #scannerVideo { width: 100%; border-radius: 14px; background: #000; display: block; }
+    .scanner-frame {
+      position: absolute; top: 18%; left: 12%; width: 76%; height: 64%;
+      border: 3px solid rgba(255,255,255,0.85); border-radius: 14px;
+      box-shadow: 0 0 0 2000px rgba(0,0,0,0.35);
+      pointer-events: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .scanner-frame.flash {
+      border-color: #2ecc71;
+      box-shadow: 0 0 0 2000px rgba(46,204,113,0.15);
+    }
+    .scanner-status {
+      color: #fff; text-align: center; font-size: 13px; margin-top: 14px; min-height: 18px;
+    }
+    .scanner-close-btn {
+      margin-top: 14px; width: 100%; max-width: 480px; padding: 14px;
+      border-radius: 10px; font-size: 15px; font-weight: bold; border: none;
+      background: #fff; color: #333;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="loading" class="loading-overlay">⏳ データを取得中...</div>
+  <div id="toast" class="toast"></div>
+
+  <!-- ライブカメラスキャナー -->
+  <div id="scannerOverlay" class="modal-overlay">
+    <div class="scanner-wrap">
+      <video id="scannerVideo" autoplay muted playsinline></video>
+      <div id="scannerFrame" class="scanner-frame"></div>
+    </div>
+    <div class="scanner-status" id="scannerStatus">QRコードを枠の中に入れてください(自動で読み取ります)</div>
+    <button class="scanner-close-btn" onclick="closeScanner()">閉じる</button>
+    <canvas id="scannerCanvas" class="hidden"></canvas>
+  </div>
+
+  <div id="inputModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-title">🔢 コード手動入力</div>
+      <div class="modal-message">物品の識別コードを入力してください</div>
+      <input type="text" id="manualCodeInput" class="modal-input" placeholder="例: 〇〇-NFH2-150S" autocomplete="off" autocapitalize="characters">
+      <div class="modal-buttons">
+        <button class="modal-btn modal-btn-cancel" onclick="closeInputModal()">キャンセル</button>
+        <button class="modal-btn modal-btn-confirm" onclick="submitManualCode()">登録</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="messageModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-title" id="messageModalTitle">お知らせ</div>
+      <div class="modal-message" id="messageModalBody"></div>
+      <div class="modal-buttons">
+        <button class="modal-btn modal-btn-confirm" style="flex:1" onclick="closeMessageModal()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="header-panel">
+    <div class="header-title">📦 CO-30 現場検品</div>
+    <div class="header-counter">
+      <span>検品済点数</span>
+      <div id="totalQty" class="counter-badge">0</div>
+    </div>
+  </div>
+
+  <div id="locationBar" class="location-bar">拠点: 未選択</div>
+
+  <div class="scan-box">
+    <button class="btn-camera-main" onclick="openScanner()">📷 カメラでスキャン(かざすだけ)</button>
+    <div class="scan-hint">シャッターは不要です。QRコードにカメラを向けると自動で読み取ります。<br>カメラは開いたままなので、続けて次の商品もスキャンできます。</div>
+    <canvas id="scanCanvas" class="hidden"></canvas>
+  </div>
+
+  <div class="item-list-container" id="itemList"></div>
+
+  <div class="footer-panel">
+    <button class="btn-footer" onclick="openInputModal()">
+      <span style="font-size: 20px;">🔢</span>
+      <span>コード手動入力</span>
+    </button>
+    <button class="btn-footer btn-footer-main" onclick="finishInspection()">
+      <span>検品完了(終了)</span>
+    </button>
+  </div>
+
+  <script>
+    /* =========================================================
+       設定: Apps Script Webアプリの /exec URL
+       ※デプロイ後、ここに自分のApps Script Webアプリの URL を入れる
+       ========================================================= */
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwobEQpkj-xUti3WC0mBoH0ylD4U_Zf1hjv4UHoXxjxQP8PO1nqOkQXg1I7Iefihcc/exec";
+
+    // URLパラメータから拠点名を取得(なければ空文字＝全件取得)
+    const urlParams = new URLSearchParams(window.location.search);
+    let activeLocation = urlParams.get('loc') || "";
+
+    let inspectionItems = [];
+    let groupMap = {};
+    let groupOrder = [];
+    let latestCode = null;
+
+    let lastScannedCode = null;
+    let lastScannedAt = 0;
+    const SCAN_COOLDOWN_MS = 1200;
+
+    const syncingCodes = new Set();
+
+    window.onload = function() {
+      if (activeLocation) {
+        document.getElementById("locationBar").innerText = `拠点: ${activeLocation}`;
+      } else {
+        document.getElementById("locationBar").innerText = `拠点: すべてのデータを表示中`;
+      }
+      loadRealData();
+    };
+
+    /* =========================================================
+       Apps Script との通信(GET/POST 経由・CORS対応)
+       ========================================================= */
+    async function gasGet(action, params = {}) {
+      const u = new URL(GAS_API_URL);
+      u.searchParams.set('action', action);
+      Object.keys(params).forEach(k => u.searchParams.set(k, params[k]));
+      const res = await fetch(u.toString(), { method: 'GET' });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.json();
+    }
+
+    async function gasPost(action, body = {}) {
+      // CORS preflight を避けるため text/plain で送る (Apps Script は中身を JSON として解釈する)
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: action, payload: body })
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.json();
+    }
+
+    async function loadRealData() {
+      document.getElementById("loading").style.display = "flex";
+      try {
+        const data = await gasGet('getInspectionData', { location: activeLocation });
+        inspectionItems = data || [];
+        buildGroups();
+        groupOrder = Object.keys(groupMap).sort((codeA, codeB) => {
+          const latestA = Math.max(...groupMap[codeA].indices.map(idx => inspectionItems[idx].updatedAt || 0));
+          const latestB = Math.max(...groupMap[codeB].indices.map(idx => inspectionItems[idx].updatedAt || 0));
+          return latestB - latestA;
+        });
+        renderList();
+      } catch (err) {
+        showMessageModal("データ取得エラー", err.message);
+      } finally {
+        document.getElementById("loading").style.display = "none";
+      }
+    }
+
+    function buildGroups() {
+      groupMap = {};
+      inspectionItems.forEach((item, idx) => {
+        if (!groupMap[item.code]) {
+          groupMap[item.code] = { indices: [], name: item.name };
+        }
+        groupMap[item.code].indices.push(idx);
+      });
+    }
+
+    function getGroupTotals(code) {
+      const indices = groupMap[code].indices;
+      let planTotal = 0, actualTotal = 0;
+      indices.forEach(idx => {
+        planTotal += inspectionItems[idx].plan;
+        actualTotal += inspectionItems[idx].actual;
+      });
+      return { planTotal, actualTotal };
+    }
+
+    function bringGroupToFront(code) {
+      groupOrder = groupOrder.filter(c => c !== code);
+      groupOrder.unshift(code);
+    }
+
+    function removeGroupFromOrder(code) {
+      groupOrder = groupOrder.filter(c => c !== code);
+    }
+
+    function renderList() {
+      const listContainer = document.getElementById("itemList");
+      const totalActual = inspectionItems.reduce((sum, it) => sum + it.actual, 0);
+      document.getElementById("totalQty").innerText = totalActual;
+
+      listContainer.innerHTML = "";
+
+      if (inspectionItems.length === 0) {
+        listContainer.innerHTML = '<p class="empty-hint">検品対象のデータがシートにありません。<br>先にCO-30一括生成を行ってください。</p>';
+        return;
+      }
+
+      const visibleCodes = groupOrder.filter(code => {
+        const { actualTotal } = getGroupTotals(code);
+        return actualTotal > 0;
+      });
+
+      if (visibleCodes.length === 0) {
+        listContainer.innerHTML = '<p class="empty-hint">📷 QRコードをスキャンすると、<br>ここに検品済みの商品が表示されます。</p>';
+        return;
+      }
+
+      visibleCodes.forEach(code => {
+        const group = groupMap[code];
+        const { planTotal, actualTotal } = getGroupTotals(code);
+        const isDone = actualTotal >= planTotal;
+        const isSyncing = syncingCodes.has(code);
+        const isLatest = code === latestCode;
+
+        const card = document.createElement("div");
+        card.className = `item-card ${isDone ? 'completed' : ''} ${isSyncing ? 'syncing' : ''} ${isLatest ? 'latest' : ''}`;
+        card.innerHTML = `
+          <div class="item-info">
+            <div class="item-name">${escapeHtml(group.name)}</div>
+            <div class="item-code">コード: ${escapeHtml(code)}</div>
+            <div class="item-status-text ${isDone ? 'status-ok' : 'status-wait'}">
+              ${isDone ? '✓ 検品完了' : `残り ${planTotal - actualTotal} 点`}
+            </div>
+          </div>
+          <div class="qty-controls">
+            <button class="btn-qty" ${isSyncing ? 'disabled' : ''} onclick="changeQtyGroup('${escapeJs(code)}', -1)">-</button>
+            <div class="qty-display">${actualTotal} / ${planTotal}</div>
+            <button class="btn-qty" ${isSyncing ? 'disabled' : ''} onclick="changeQtyGroup('${escapeJs(code)}', 1)">+</button>
+          </div>
+        `;
+        listContainer.appendChild(card);
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function escapeJs(s) {
+      return String(s).replace(/['\\]/g, '\\$&');
+    }
+
+    async function changeQtyGroup(code, amount) {
+      if (syncingCodes.has(code)) return;
+
+      const group = groupMap[code];
+      if (!group) return;
+
+      let targetIndex = null;
+
+      if (amount > 0) {
+        targetIndex = group.indices.find(idx => inspectionItems[idx].actual < inspectionItems[idx].plan);
+        if (targetIndex === undefined) {
+          showToast(`⚠️ ${group.name} は既に必要数に達しています`);
+          return;
+        }
+      } else {
+        for (let i = group.indices.length - 1; i >= 0; i--) {
+          if (inspectionItems[group.indices[i]].actual > 0) {
+            targetIndex = group.indices[i];
+            break;
+          }
+        }
+        if (targetIndex === null) return;
+      }
+
+      const item = inspectionItems[targetIndex];
+      const nextQty = item.actual + amount;
+      if (nextQty < 0 || nextQty > item.plan) return;
+
+      const previousQty = item.actual;
+      item.actual = nextQty;
+
+      const { actualTotal: newActualTotal } = getGroupTotals(code);
+      if (newActualTotal > 0) {
+        bringGroupToFront(code);
+        latestCode = code;
+      } else {
+        removeGroupFromOrder(code);
+        latestCode = null;
+      }
+
+      syncingCodes.add(code);
+      renderList();
+
+      try {
+        const res = await gasPost('updateInspectionQty', {
+          location: activeLocation,
+          itemCode: item.code,
+          newQty: nextQty,
+          rowId: item.rowId
+        });
+        syncingCodes.delete(code);
+        if (!res || !res.success) {
+          item.actual = previousQty;
+          const { actualTotal: rollbackTotal } = getGroupTotals(code);
+          if (rollbackTotal === 0) removeGroupFromOrder(code);
+          showToast("⚠️ シートの同期に失敗したため元に戻しました: " + (res && res.error ? res.error : ""));
+        } else {
+          if (res.updatedAt) item.updatedAt = res.updatedAt;
+          if (res.rowId) item.rowId = res.rowId;
+        }
+        renderList();
+      } catch (err) {
+        syncingCodes.delete(code);
+        item.actual = previousQty;
+        const { actualTotal: rollbackTotal } = getGroupTotals(code);
+        if (rollbackTotal === 0) removeGroupFromOrder(code);
+        showToast("⚠️ 通信エラーのため元に戻しました: " + err.message);
+        renderList();
+      }
+    }
+
+    function onScanSuccess(decodedText) {
+      const cleanCode = (decodedText || "").trim();
+      if (!cleanCode) return;
+
+      const now = Date.now();
+      if (cleanCode === lastScannedCode && (now - lastScannedAt) < SCAN_COOLDOWN_MS) {
+        return;
+      }
+      lastScannedCode = cleanCode;
+      lastScannedAt = now;
+
+      if (groupMap[cleanCode]) {
+        const groupName = groupMap[cleanCode].name;
+        const totalsBefore = getGroupTotals(cleanCode);
+        if (totalsBefore.actualTotal < totalsBefore.planTotal) {
+          changeQtyGroup(cleanCode, 1);
+          showToast(`🟢 ピッ！ ${groupName}`);
+          if (navigator.vibrate) navigator.vibrate(50);
+        } else {
+          showToast(`⚠️ ${groupName} は既に必要数に達しています`);
+        }
+      } else {
+        showToast(`❌ 未登録コード: ${cleanCode}`);
+      }
+    }
+
+    /* =========================================================
+       ライブカメラスキャナー
+       ========================================================= */
+    let scannerStream = null;
+    let scannerRAF = null;
+
+    function openScanner() {
+      const overlay = document.getElementById("scannerOverlay");
+      const video = document.getElementById("scannerVideo");
+      const statusEl = document.getElementById("scannerStatus");
+
+      overlay.classList.add("show");
+      statusEl.innerText = "カメラを起動しています...";
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        overlay.classList.remove("show");
+        showMessageModal("カメラが使用できません", "このブラウザはリアルタイムスキャンに対応していません。");
+        return;
+      }
+
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      }).then(function(stream) {
+        scannerStream = stream;
+        video.srcObject = stream;
+        video.onloadedmetadata = function() {
+          video.play();
+          statusEl.innerText = "QRコードを枠の中に入れてください(自動で読み取ります)";
+          scanLoop();
+        };
+      }).catch(function(err) {
+        closeScanner();
+        showMessageModal(
+          "カメラを起動できません",
+          "カメラへのアクセスが許可されていない可能性があります。\n端末の設定でこのページのカメラ利用を許可してください。\n\n詳細: " + err.message
+        );
+      });
+    }
+
+    function scanLoop() {
+      if (!scannerStream) return;
+
+      const video = document.getElementById("scannerVideo");
+      const canvas = document.getElementById("scannerCanvas");
+
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        const vw = video.videoWidth, vh = video.videoHeight;
+        if (vw && vh) {
+          const scale = Math.min(1, 480 / vw);
+          const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
+          canvas.width = cw;
+          canvas.height = ch;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          ctx.drawImage(video, 0, 0, cw, ch);
+
+          try {
+            const imageData = ctx.getImageData(0, 0, cw, ch);
+            const result = jsQR(imageData.data, cw, ch, { inversionAttempts: "attemptBoth" });
+            if (result && result.data) {
+              onScanSuccess(result.data);
+              flashScannerFrame();
+            }
+          } catch (e) {
+            // 一時的なエラーは無視
+          }
+        }
+      }
+
+      scannerRAF = requestAnimationFrame(scanLoop);
+    }
+
+    function flashScannerFrame() {
+      const frame = document.getElementById("scannerFrame");
+      frame.classList.add("flash");
+      setTimeout(() => frame.classList.remove("flash"), 200);
+    }
+
+    function closeScanner() {
+      if (scannerRAF) {
+        cancelAnimationFrame(scannerRAF);
+        scannerRAF = null;
+      }
+      if (scannerStream) {
+        scannerStream.getTracks().forEach(t => t.stop());
+        scannerStream = null;
+      }
+      const video = document.getElementById("scannerVideo");
+      video.srcObject = null;
+      document.getElementById("scannerOverlay").classList.remove("show");
+    }
+
+    /* =========================================================
+       コード手動入力
+       ========================================================= */
+    function openInputModal() {
+      const modal = document.getElementById("inputModal");
+      const input = document.getElementById("manualCodeInput");
+      input.value = "";
+      modal.classList.add("show");
+      setTimeout(() => input.focus(), 150);
+    }
+    function closeInputModal() {
+      document.getElementById("inputModal").classList.remove("show");
+    }
+    function submitManualCode() {
+      const input = document.getElementById("manualCodeInput");
+      const code = input.value.trim();
+      closeInputModal();
+      if (code) onScanSuccess(code);
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+      const input = document.getElementById("manualCodeInput");
+      if (input) {
+        input.addEventListener("keydown", function(e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submitManualCode();
+          }
+        });
+      }
+    });
+
+    function showMessageModal(title, body) {
+      document.getElementById("messageModalTitle").innerText = title;
+      document.getElementById("messageModalBody").innerText = body;
+      document.getElementById("messageModal").classList.add("show");
+    }
+    function closeMessageModal() {
+      document.getElementById("messageModal").classList.remove("show");
+    }
+    function finishInspection() {
+      closeScanner();
+      showMessageModal("検品作業を終了します", "画面を閉じてください。");
+    }
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      toast.innerText = msg;
+      toast.style.display = "block";
+      setTimeout(() => { toast.style.display = "none"; }, 2400);
+    }
+  </script>
+</body>
+</html>

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>CO-30 現場検品スキャナー</title>
 
-  <!-- jsQR ライブラリ：GitHub PagesはCDNブロックに引っかからないドメインなので、CDNから直接読み込んでOK -->
+  <!-- jsQR ライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
   <style>
@@ -191,6 +191,34 @@
     .scanner-status {
       color: #fff; text-align: center; font-size: 13px; margin-top: 14px; min-height: 18px;
     }
+
+    /* モード切り替えトグル */
+    .scanner-mode-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: #fff;
+      font-size: 13px;
+      margin-top: 10px;
+      padding: 8px 14px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 24px;
+      max-width: 480px;
+      width: 100%;
+    }
+    .scanner-mode-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .scanner-mode-toggle input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #f39c12;
+    }
+
     .scanner-close-btn {
       margin-top: 14px; width: 100%; max-width: 480px; padding: 14px;
       border-radius: 10px; font-size: 15px; font-weight: bold; border: none;
@@ -210,6 +238,12 @@
       <div id="scannerFrame" class="scanner-frame"></div>
     </div>
     <div class="scanner-status" id="scannerStatus">QRコードを枠の中に入れてください(自動で読み取ります)</div>
+    <div class="scanner-mode-toggle">
+      <label>
+        <input type="checkbox" id="autoCloseToggle" onchange="onAutoCloseToggleChange()">
+        <span>1つスキャンしたら自動で閉じる(レジゴー方式)</span>
+      </label>
+    </div>
     <button class="scanner-close-btn" onclick="closeScanner()">閉じる</button>
     <canvas id="scannerCanvas" class="hidden"></canvas>
   </div>
@@ -267,7 +301,7 @@
   <script>
     /* =========================================================
        設定: Apps Script Webアプリの /exec URL
-       ※デプロイ後、ここに自分のApps Script Webアプリの URL を入れる
+       ※ここに自分のApps Script Webアプリの URL を入れる
        ========================================================= */
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwobEQpkj-xUti3WC0mBoH0ylD4U_Zf1hjv4UHoXxjxQP8PO1nqOkQXg1I7Iefihcc/exec";
 
@@ -520,6 +554,26 @@
     }
 
     /* =========================================================
+       スキャナーのモード設定(連続スキャン / 1回で自動クローズ)
+       設定は localStorage に保存され、次回起動時にも引き継がれる
+       ========================================================= */
+    function getAutoCloseEnabled() {
+      return localStorage.getItem('scanner_auto_close') === 'yes';
+    }
+    function setAutoCloseEnabled(val) {
+      localStorage.setItem('scanner_auto_close', val ? 'yes' : 'no');
+    }
+    function onAutoCloseToggleChange() {
+      const cb = document.getElementById('autoCloseToggle');
+      setAutoCloseEnabled(cb.checked);
+    }
+    // ページ読み込み時にトグルの状態を復元
+    window.addEventListener('DOMContentLoaded', function() {
+      const cb = document.getElementById('autoCloseToggle');
+      if (cb) cb.checked = getAutoCloseEnabled();
+    });
+
+    /* =========================================================
        ライブカメラスキャナー
        ========================================================= */
     let scannerStream = null;
@@ -598,7 +652,10 @@
           if (result && result.data) {
             onScanSuccess(result.data);
             flashScannerFrame();
-            closeScanner(); // 🎯 レジゴー風：読み取り成功したら自動でカメラを閉じる
+            // 設定に応じて自動クローズ(レジゴー方式) or 連続スキャン継続
+            if (getAutoCloseEnabled()) {
+              closeScanner();
+            }
           }
         }
       }

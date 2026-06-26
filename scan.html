@@ -67,7 +67,7 @@
 
     .item-list-container {
       padding: 12px;
-      padding-bottom: 160px; /* 🆕 下部固定スキャンボタンの分の余白 */
+      padding-bottom: 160px;
     }
     .empty-hint {
       text-align: center; color: #aaa;
@@ -96,6 +96,17 @@
     .item-info { flex: 1; }
     .item-name { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
     .item-code { font-size: 11px; color: #7f8c8d; }
+    .item-team-tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 1px 6px;
+      border-radius: 8px;
+      margin-top: 4px;
+      color: #fff;
+    }
+    .item-team-tag.transport { background: #2ecc71; }
+    .item-team-tag.rental { background: #3498db; }
     .item-status-text { font-size: 12px; font-weight: bold; margin-top: 4px; }
     .status-wait { color: #e67e22; }
     .status-ok { color: #2ecc71; }
@@ -112,9 +123,7 @@
     .btn-qty:disabled { opacity: 0.4; }
     .qty-display { font-size: 16px; font-weight: bold; min-width: 48px; text-align: center; }
 
-    /* =========================================================
-       🆕 下部固定スキャンボタンエリア(レジゴー風)
-       ========================================================= */
+    /* 下部固定スキャンボタンエリア */
     .scan-dock {
       position: fixed;
       bottom: 0;
@@ -159,7 +168,7 @@
     .toast {
       position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
       background: rgba(0,0,0,0.85); color: #fff; padding: 10px 20px;
-      border-radius: 20px; font-size: 14px; z-index: 1000;
+      border-radius: 20px; font-size: 14px; z-index: 5000;
       display: none; text-align: center; max-width: 85%;
     }
     .toast.error { background: rgba(192,57,43,0.95); }
@@ -196,7 +205,6 @@
     .modal-btn-cancel { background: #f0f3f4; color: #555; }
     .modal-btn-confirm { background: #f39c12; color: #fff; }
 
-    /* 🆕 TM選択モーダル */
     .team-option {
       display: block;
       width: 100%;
@@ -269,7 +277,7 @@
   <div id="loading" class="loading-overlay">⏳ データを取得中...</div>
   <div id="toast" class="toast"></div>
 
-  <!-- 🆕 TM選択モーダル(初回起動時 + ヘッダータップで切り替え) -->
+  <!-- TM選択モーダル -->
   <div id="teamSelectModal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-title">👥 担当チームを選択</div>
@@ -328,7 +336,7 @@
     </div>
   </div>
 
-  <!-- 🆕 ヘッダー: 担当TMバッジ表示。タップでチーム切り替え -->
+  <!-- ヘッダー: 担当TMバッジ表示。タップでチーム切り替え -->
   <div class="header-panel" onclick="openTeamSelectModal()" style="cursor:pointer;">
     <div class="header-left">
       <div class="header-title">📦 CO-30 現場検品</div>
@@ -344,7 +352,7 @@
 
   <div class="item-list-container" id="itemList"></div>
 
-  <!-- 🆕 下部固定スキャンボタン(レジゴー風) -->
+  <!-- 下部固定スキャンボタン(レジゴー風) -->
   <div class="scan-dock">
     <button class="btn-scan-bottom" onclick="openScanner()">
       <span class="icon">📷</span>
@@ -357,15 +365,17 @@
     /* =========================================================
        設定: Apps Script Webアプリの /exec URL
        ========================================================= */
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwobEQpkj-xUti3WC0mBoH0ylD4U_Zf1hjv4UHoXxjxQP8PO1nqOkQXg1I7Iefihcc/exec";
+    const GAS_API_URL = "YOUR_APPS_SCRIPT_EXEC_URL_HERE";
 
-    // URLパラメータから拠点名・チームを取得
     const urlParams = new URLSearchParams(window.location.search);
     let activeLocation = urlParams.get('loc') || "";
     let activeTeam = ""; // "運送" | "レンタル" | "両方"
 
-    let inspectionItems = [];
-    let groupMap = {};
+    // 🆕 表示用(選択中TMのみ)と、判定用(全TM)を別々に保持
+    let displayItems = [];   // リスト表示・数量操作の対象(選択中TMのみ)
+    let allItemsByCode = {}; // 担当外チェック用：コード→{name, team} の全件マップ
+
+    let groupMap = {};      // displayItems を元にしたグルーピング(表示用)
     let groupOrder = [];
     let latestCode = null;
 
@@ -381,7 +391,6 @@
       } else {
         document.getElementById("locationBar").innerText = `拠点: すべて`;
       }
-      // 前回のTM選択を復元(なければ初回モーダル表示)
       const savedTeam = localStorage.getItem('scanner_active_team');
       if (savedTeam) {
         activeTeam = savedTeam;
@@ -445,15 +454,24 @@
     async function loadRealData() {
       document.getElementById("loading").style.display = "flex";
       try {
-        const data = await gasGet('getInspectionData', {
+        // 🆕 サーバーは { display: [...], all: [...] } の形で返す
+        const res = await gasGet('getInspectionData', {
           location: activeLocation,
           team: activeTeam
         });
-        inspectionItems = data || [];
+        displayItems = (res && res.display) ? res.display : [];
+        const allItems = (res && res.all) ? res.all : [];
+
+        // 全件データをコードベースのマップに変換(担当外チェック用)
+        allItemsByCode = {};
+        allItems.forEach(item => {
+          allItemsByCode[item.code] = { name: item.name, team: item.team };
+        });
+
         buildGroups();
         groupOrder = Object.keys(groupMap).sort((codeA, codeB) => {
-          const latestA = Math.max(...groupMap[codeA].indices.map(idx => inspectionItems[idx].updatedAt || 0));
-          const latestB = Math.max(...groupMap[codeB].indices.map(idx => inspectionItems[idx].updatedAt || 0));
+          const latestA = Math.max(...groupMap[codeA].indices.map(idx => displayItems[idx].updatedAt || 0));
+          const latestB = Math.max(...groupMap[codeB].indices.map(idx => displayItems[idx].updatedAt || 0));
           return latestB - latestA;
         });
         renderList();
@@ -466,7 +484,7 @@
 
     function buildGroups() {
       groupMap = {};
-      inspectionItems.forEach((item, idx) => {
+      displayItems.forEach((item, idx) => {
         if (!groupMap[item.code]) {
           groupMap[item.code] = { indices: [], name: item.name, team: item.team };
         }
@@ -478,8 +496,8 @@
       const indices = groupMap[code].indices;
       let planTotal = 0, actualTotal = 0;
       indices.forEach(idx => {
-        planTotal += inspectionItems[idx].plan;
-        actualTotal += inspectionItems[idx].actual;
+        planTotal += displayItems[idx].plan;
+        actualTotal += displayItems[idx].actual;
       });
       return { planTotal, actualTotal };
     }
@@ -492,14 +510,20 @@
       groupOrder = groupOrder.filter(c => c !== code);
     }
 
+    function teamTagClass(team) {
+      if (team === '運送') return 'transport';
+      if (team === 'レンタル') return 'rental';
+      return '';
+    }
+
     function renderList() {
       const listContainer = document.getElementById("itemList");
-      const totalActual = inspectionItems.reduce((sum, it) => sum + it.actual, 0);
+      const totalActual = displayItems.reduce((sum, it) => sum + it.actual, 0);
       document.getElementById("totalQty").innerText = totalActual;
 
       listContainer.innerHTML = "";
 
-      if (inspectionItems.length === 0) {
+      if (displayItems.length === 0) {
         listContainer.innerHTML = '<p class="empty-hint">このチームの検品対象データがありません。<br>先にCO-30一括生成を行ってください。</p>';
         return;
       }
@@ -520,6 +544,7 @@
         const isDone = actualTotal >= planTotal;
         const isSyncing = syncingCodes.has(code);
         const isLatest = code === latestCode;
+        const tagCls = teamTagClass(group.team);
 
         const card = document.createElement("div");
         card.className = `item-card ${isDone ? 'completed' : ''} ${isSyncing ? 'syncing' : ''} ${isLatest ? 'latest' : ''}`;
@@ -527,6 +552,7 @@
           <div class="item-info">
             <div class="item-name">${escapeHtml(group.name)}</div>
             <div class="item-code">コード: ${escapeHtml(code)}</div>
+            ${activeTeam === '両方' && tagCls ? `<span class="item-team-tag ${tagCls}">${escapeHtml(group.team)}TM</span>` : ''}
             <div class="item-status-text ${isDone ? 'status-ok' : 'status-wait'}">
               ${isDone ? '✓ 検品完了' : `残り ${planTotal - actualTotal} 点`}
             </div>
@@ -555,14 +581,14 @@
 
       let targetIndex = null;
       if (amount > 0) {
-        targetIndex = group.indices.find(idx => inspectionItems[idx].actual < inspectionItems[idx].plan);
+        targetIndex = group.indices.find(idx => displayItems[idx].actual < displayItems[idx].plan);
         if (targetIndex === undefined) {
           showToast(`⚠️ ${group.name} は既に必要数に達しています`);
           return;
         }
       } else {
         for (let i = group.indices.length - 1; i >= 0; i--) {
-          if (inspectionItems[group.indices[i]].actual > 0) {
+          if (displayItems[group.indices[i]].actual > 0) {
             targetIndex = group.indices[i];
             break;
           }
@@ -570,7 +596,7 @@
         if (targetIndex === null) return;
       }
 
-      const item = inspectionItems[targetIndex];
+      const item = displayItems[targetIndex];
       const nextQty = item.actual + amount;
       if (nextQty < 0 || nextQty > item.plan) return;
 
@@ -617,6 +643,12 @@
       }
     }
 
+    /**
+     * 🆕 スキャン成功時の処理。
+     * 1. まず「全件マップ(allItemsByCode)」でコードの実在と担当TMを確認
+     * 2. 担当外なら(両方モード以外で)赤エラー
+     * 3. 担当内 or 両方モードなら、表示中リスト(groupMap)で数量加算
+     */
     function onScanSuccess(decodedText) {
       const cleanCode = (decodedText || "").trim();
       if (!cleanCode) return;
@@ -628,27 +660,45 @@
       lastScannedCode = cleanCode;
       lastScannedAt = now;
 
-      if (groupMap[cleanCode]) {
-        const group = groupMap[cleanCode];
-        // 🆕 担当外チェック(両方モード時は常にOK)
-        if (activeTeam !== '両方' && group.team && group.team !== activeTeam) {
-          showToast(`❌ 担当外: ${group.team}TMの物品です(${group.name})`, true);
-          playErrorBeep();
-          flashScannerFrame(true);
-          return;
-        }
+      const masterInfo = allItemsByCode[cleanCode]; // {name, team} or undefined
 
-        const totalsBefore = getGroupTotals(cleanCode);
-        if (totalsBefore.actualTotal < totalsBefore.planTotal) {
-          changeQtyGroup(cleanCode, 1);
-          showToast(`🟢 ピッ！ ${group.name}`);
-          playBeep();
-          if (navigator.vibrate) navigator.vibrate(50);
-        } else {
-          showToast(`⚠️ ${group.name} は既に必要数に達しています`);
+      if (!masterInfo) {
+        showToast(`❌ 未登録コード: ${cleanCode}`, true);
+        playErrorBeep();
+        flashScannerFrame(true);
+        return;
+      }
+
+      // 担当外チェック(「両方」モードでは常にOK)
+      if (activeTeam !== '両方' && masterInfo.team && masterInfo.team !== activeTeam) {
+        showToast(`❌ 担当外: ${masterInfo.team}TMの物品です(${masterInfo.name})`, true);
+        playErrorBeep();
+        flashScannerFrame(true);
+        return;
+      }
+
+      // ここまで来たら担当内 → 表示中リストのグループに加算
+      const group = groupMap[cleanCode];
+      if (!group) {
+        // 理論上は起きないはずだが、念のためのフォールバック
+        showToast(`❌ 表示データに見つかりません: ${cleanCode}`, true);
+        flashScannerFrame(true);
+        return;
+      }
+
+      const totalsBefore = getGroupTotals(cleanCode);
+      if (totalsBefore.actualTotal < totalsBefore.planTotal) {
+        changeQtyGroup(cleanCode, 1);
+        showToast(`🟢 ピッ！ ${masterInfo.name}`);
+        playBeep();
+        flashScannerFrame(false);
+        if (navigator.vibrate) navigator.vibrate(50);
+        if (getAutoCloseEnabled()) {
+          closeScanner();
         }
       } else {
-        showToast(`❌ 未登録コード: ${cleanCode}`, true);
+        showToast(`⚠️ ${masterInfo.name} は既に必要数に達しています`);
+        flashScannerFrame(false);
       }
     }
 
@@ -747,18 +797,8 @@
           }
 
           if (result && result.data) {
+            // onScanSuccess内でフラッシュ・自動クローズ判定まで一括して行う
             onScanSuccess(result.data);
-            // 担当外エラーの場合はflashScannerFrame(true)が onScanSuccess 内で呼ばれる
-            // 正常スキャン時のみここで通常フラッシュ + 自動クローズ判定
-            const code = (result.data || "").trim();
-            const group = groupMap[code];
-            const isAllowed = group && (activeTeam === '両方' || !group.team || group.team === activeTeam);
-            if (isAllowed) {
-              flashScannerFrame();
-              if (getAutoCloseEnabled()) {
-                closeScanner();
-              }
-            }
           }
         }
       }
@@ -856,7 +896,6 @@
       if (!audioCtx) return;
       try {
         if (audioCtx.state === 'suspended') audioCtx.resume();
-        // 低い「ブッブッ」音(エラー用)
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = 'square';

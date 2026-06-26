@@ -544,7 +544,8 @@
         if (totalsBefore.actualTotal < totalsBefore.planTotal) {
           changeQtyGroup(cleanCode, 1);
           showToast(`🟢 ピッ！ ${groupName}`);
-          if (navigator.vibrate) navigator.vibrate(50);
+          playBeep(); // ビープ音
+          if (navigator.vibrate) navigator.vibrate(50); // バイブ(iPhoneでは効かないがAndroidでは動作)
         } else {
           showToast(`⚠️ ${groupName} は既に必要数に達しています`);
         }
@@ -556,9 +557,11 @@
     /* =========================================================
        スキャナーのモード設定(連続スキャン / 1回で自動クローズ)
        設定は localStorage に保存され、次回起動時にも引き継がれる
+       デフォルトは true(レジゴー方式)
        ========================================================= */
     function getAutoCloseEnabled() {
-      return localStorage.getItem('scanner_auto_close') === 'yes';
+      // デフォルトは true(レジゴー方式)。明示的に "no" が保存されていない限り ON。
+      return localStorage.getItem('scanner_auto_close') !== 'no';
     }
     function setAutoCloseEnabled(val) {
       localStorage.setItem('scanner_auto_close', val ? 'yes' : 'no');
@@ -580,6 +583,7 @@
     let scannerRAF = null;
 
     function openScanner() {
+      ensureAudioContext(); // ユーザー操作のタイミングで AudioContext を起動(iOS対策)
       const overlay = document.getElementById("scannerOverlay");
       const video = document.getElementById("scannerVideo");
       const statusEl = document.getElementById("scannerStatus");
@@ -727,6 +731,40 @@
       closeScanner();
       showMessageModal("検品作業を終了します", "画面を閉じてください。");
     }
+
+    /* =========================================================
+       ビープ音(WebAudio APIで生成。音声ファイル不要)
+       iOSではユーザー操作(タップ)後でないと音が鳴らないため、
+       カメラ起動ボタンタップ時に AudioContext を初期化しておく。
+       ========================================================= */
+    let audioCtx = null;
+    function ensureAudioContext() {
+      if (audioCtx) return;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      } catch (e) {}
+    }
+    function playBeep() {
+      if (!audioCtx) return;
+      try {
+        // iOS Safariで音が出ない場合のためのリジューム
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // 880Hz = 高めのピッ音
+        gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.4, audioCtx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + 0.16);
+      } catch (e) {}
+    }
+
     function showToast(msg) {
       const toast = document.getElementById("toast");
       toast.innerText = msg;

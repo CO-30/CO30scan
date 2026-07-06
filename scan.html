@@ -4,21 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>CO-30 現場検品スキャナー</title>
-
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-
   <style>
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background-color: #f4f6f7;
-      margin: 0;
-      padding: 0;
+      margin: 0; padding: 0;
       color: #333;
       user-select: none;
       -webkit-tap-highlight-color: transparent;
     }
 
+    /* ===== ヘッダー ===== */
     .header-panel {
       background-color: #f39c12;
       color: #fff;
@@ -31,6 +29,7 @@
       align-items: center;
       justify-content: space-between;
     }
+    .header-panel.mode-return { background-color: #8e44ad; }
     .header-left { display: flex; flex-direction: column; gap: 2px; }
     .header-title { font-size: 14px; font-weight: bold; }
     .header-team {
@@ -42,8 +41,8 @@
       width: fit-content;
     }
     .header-team.transport { background: #2ecc71; }
-    .header-team.rental { background: #3498db; }
-    .header-team.both { background: #9b59b6; }
+    .header-team.rental    { background: #3498db; }
+    .header-team.both      { background: #9b59b6; }
     .header-counter { display: flex; align-items: center; gap: 8px; }
     .counter-badge {
       background: #fff;
@@ -55,6 +54,35 @@
       min-width: 40px;
       text-align: center;
     }
+    .header-panel.mode-return .counter-badge { color: #8e44ad; }
+
+    /* ===== モード切り替えタブ ===== */
+    .mode-tabs {
+      display: flex;
+      background: #fff;
+      border-bottom: 2px solid #eee;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 12px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      color: #aaa;
+      border: none;
+      background: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-tab.active-inspect {
+      color: #f39c12;
+      border-bottom-color: #f39c12;
+    }
+    .mode-tab.active-return {
+      color: #8e44ad;
+      border-bottom-color: #8e44ad;
+    }
 
     .location-bar {
       background-color: #eeb95d;
@@ -64,11 +92,23 @@
       font-weight: bold;
       text-align: center;
     }
+    .location-bar.mode-return { background-color: #a569bd; }
 
-    .item-list-container {
-      padding: 12px;
-      padding-bottom: 160px;
+    /* ===== モードバナー ===== */
+    .mode-banner {
+      display: none;
+      background: #f5eef8;
+      border-bottom: 1px solid #d7bde2;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #8e44ad;
+      text-align: center;
     }
+    .mode-banner.show { display: block; }
+
+    /* ===== リスト ===== */
+    .item-list-container { padding: 12px; padding-bottom: 160px; }
     .empty-hint {
       text-align: center; color: #aaa;
       padding: 40px 20px; font-size: 14px; line-height: 1.6;
@@ -88,11 +128,12 @@
     }
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(-8px); }
-      to { opacity: 1; transform: translateY(0); }
+      to   { opacity: 1; transform: translateY(0); }
     }
-    .item-card.completed { border-left-color: #2ecc71; background-color: #f0fff5; }
-    .item-card.syncing { opacity: 0.5; }
-    .item-card.latest { border-left-color: #f39c12; box-shadow: 0 2px 8px rgba(243,156,18,0.3); }
+    .item-card.completed  { border-left-color: #2ecc71; background-color: #f0fff5; }
+    .item-card.returned   { border-left-color: #8e44ad; background-color: #f5eef8; }
+    .item-card.syncing    { opacity: 0.5; }
+    .item-card.latest     { border-left-color: #f39c12; box-shadow: 0 2px 8px rgba(243,156,18,0.3); }
     .item-info { flex: 1; }
     .item-name { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
     .item-code { font-size: 11px; color: #7f8c8d; }
@@ -106,10 +147,11 @@
       color: #fff;
     }
     .item-team-tag.transport { background: #2ecc71; }
-    .item-team-tag.rental { background: #3498db; }
+    .item-team-tag.rental    { background: #3498db; }
     .item-status-text { font-size: 12px; font-weight: bold; margin-top: 4px; }
-    .status-wait { color: #e67e22; }
-    .status-ok { color: #2ecc71; }
+    .status-wait    { color: #e67e22; }
+    .status-ok      { color: #2ecc71; }
+    .status-returned { color: #8e44ad; }
     .qty-controls {
       display: flex; align-items: center; gap: 6px;
       background: #f0f3f4; padding: 5px 10px; border-radius: 24px;
@@ -123,12 +165,10 @@
     .btn-qty:disabled { opacity: 0.4; }
     .qty-display { font-size: 16px; font-weight: bold; min-width: 48px; text-align: center; }
 
-    /* 下部固定スキャンボタンエリア */
+    /* ===== 下部固定スキャンボタン ===== */
     .scan-dock {
       position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
+      bottom: 0; left: 0; width: 100%;
       background: linear-gradient(to top, rgba(244,246,247,1) 0%, rgba(244,246,247,1) 60%, rgba(244,246,247,0) 100%);
       padding: 30px 14px 18px 14px;
       z-index: 100;
@@ -152,6 +192,11 @@
       align-items: center;
       justify-content: center;
       gap: 10px;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .btn-scan-bottom.mode-return {
+      background: #8e44ad;
+      box-shadow: 0 4px 16px rgba(142,68,173,0.5);
     }
     .btn-scan-bottom:active { transform: scale(0.97); opacity: 0.9; }
     .btn-scan-bottom .icon { font-size: 24px; }
@@ -165,13 +210,15 @@
       font-weight: bold;
     }
 
+    /* ===== トースト ===== */
     .toast {
       position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
       background: rgba(0,0,0,0.85); color: #fff; padding: 10px 20px;
       border-radius: 20px; font-size: 14px; z-index: 5000;
       display: none; text-align: center; max-width: 85%;
     }
-    .toast.error { background: rgba(192,57,43,0.95); }
+    .toast.error  { background: rgba(192,57,43,0.95); }
+    .toast.return { background: rgba(142,68,173,0.95); }
     .loading-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(255,255,255,0.7); z-index: 2000;
@@ -180,6 +227,7 @@
     }
     .hidden { display: none; }
 
+    /* ===== モーダル ===== */
     .modal-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(0,0,0,0.5); z-index: 3000;
@@ -190,44 +238,31 @@
       background: #fff; border-radius: 16px; padding: 22px;
       width: 100%; max-width: 360px; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
     }
-    .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; color: #333; }
+    .modal-title  { font-size: 16px; font-weight: bold; margin-bottom: 12px; color: #333; }
     .modal-message { font-size: 14px; color: #555; margin-bottom: 16px; line-height: 1.6; white-space: pre-wrap; }
     .modal-input {
-      width: 100%; box-sizing: border-box; font-size: 16px;
-      padding: 12px; border: 1px solid #ccc; border-radius: 10px; margin-bottom: 16px;
+      width: 100%; font-size: 16px; padding: 12px;
+      border: 1px solid #ccc; border-radius: 10px; margin-bottom: 16px;
     }
-    .modal-input:focus { outline: 2px solid #f39c12; border-color: #f39c12; }
+    .modal-input:focus { outline: 2px solid #f39c12; }
     .modal-buttons { display: flex; gap: 10px; }
-    .modal-btn {
-      flex: 1; padding: 12px; border-radius: 10px;
-      font-size: 15px; font-weight: bold; border: none;
-    }
-    .modal-btn-cancel { background: #f0f3f4; color: #555; }
+    .modal-btn { flex: 1; padding: 12px; border-radius: 10px; font-size: 15px; font-weight: bold; border: none; }
+    .modal-btn-cancel  { background: #f0f3f4; color: #555; }
     .modal-btn-confirm { background: #f39c12; color: #fff; }
 
+    /* TM選択 */
     .team-option {
-      display: block;
-      width: 100%;
-      padding: 18px;
-      margin-bottom: 10px;
-      border: 2px solid #ddd;
-      border-radius: 12px;
-      background: #fff;
-      cursor: pointer;
-      font-size: 16px;
-      font-weight: bold;
-      text-align: left;
+      display: block; width: 100%; padding: 18px; margin-bottom: 10px;
+      border: 2px solid #ddd; border-radius: 12px;
+      background: #fff; cursor: pointer; font-size: 16px; font-weight: bold; text-align: left;
     }
     .team-option:active { transform: scale(0.98); }
     .team-option.transport { border-color: #2ecc71; }
-    .team-option.transport:active { background: #f0fff5; }
-    .team-option.rental { border-color: #3498db; }
-    .team-option.rental:active { background: #ebf5fb; }
-    .team-option.both { border-color: #9b59b6; }
-    .team-option.both:active { background: #f5eef8; }
+    .team-option.rental    { border-color: #3498db; }
+    .team-option.both      { border-color: #9b59b6; }
     .team-option-sub { font-size: 12px; color: #888; font-weight: normal; margin-top: 4px; }
 
-    /* ===== ライブスキャナー ===== */
+    /* ===== スキャナー ===== */
     #scannerOverlay {
       z-index: 4000;
       background: rgba(0,0,0,0.92);
@@ -242,14 +277,9 @@
       pointer-events: none;
       transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .scanner-frame.flash {
-      border-color: #2ecc71;
-      box-shadow: 0 0 0 2000px rgba(46,204,113,0.15);
-    }
-    .scanner-frame.flash-error {
-      border-color: #e74c3c;
-      box-shadow: 0 0 0 2000px rgba(231,76,60,0.15);
-    }
+    .scanner-frame.flash       { border-color: #2ecc71; box-shadow: 0 0 0 2000px rgba(46,204,113,0.15); }
+    .scanner-frame.flash-return { border-color: #8e44ad; box-shadow: 0 0 0 2000px rgba(142,68,173,0.15); }
+    .scanner-frame.flash-error  { border-color: #e74c3c; box-shadow: 0 0 0 2000px rgba(231,76,60,0.15); }
     .scanner-status {
       color: #fff; text-align: center; font-size: 13px; margin-top: 14px; min-height: 18px;
     }
@@ -259,12 +289,8 @@
       padding: 8px 14px; background: rgba(255,255,255,0.12);
       border-radius: 24px; max-width: 480px; width: 100%;
     }
-    .scanner-mode-toggle label {
-      display: flex; align-items: center; gap: 8px; cursor: pointer;
-    }
-    .scanner-mode-toggle input[type="checkbox"] {
-      width: 18px; height: 18px; accent-color: #f39c12;
-    }
+    .scanner-mode-toggle label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .scanner-mode-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: #f39c12; }
     .scanner-close-btn {
       margin-top: 14px; width: 100%; max-width: 480px; padding: 14px;
       border-radius: 10px; font-size: 15px; font-weight: bold; border: none;
@@ -297,7 +323,7 @@
     </div>
   </div>
 
-  <!-- ライブカメラスキャナー -->
+  <!-- スキャナー -->
   <div id="scannerOverlay" class="modal-overlay">
     <div class="scanner-wrap">
       <video id="scannerVideo" autoplay muted playsinline></video>
@@ -314,11 +340,12 @@
     <canvas id="scannerCanvas" class="hidden"></canvas>
   </div>
 
+  <!-- 手動入力モーダル -->
   <div id="inputModal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-title">🔢 コード手動入力</div>
       <div class="modal-message">物品の識別コードを入力してください</div>
-      <input type="text" id="manualCodeInput" class="modal-input" placeholder="例: 〇〇-NFH2-150S" autocomplete="off" autocapitalize="characters">
+      <input type="text" id="manualCodeInput" class="modal-input" placeholder="例: 設営-NFH2-A" autocomplete="off" autocapitalize="characters">
       <div class="modal-buttons">
         <button class="modal-btn modal-btn-cancel" onclick="closeInputModal()">キャンセル</button>
         <button class="modal-btn modal-btn-confirm" onclick="submitManualCode()">登録</button>
@@ -326,6 +353,7 @@
     </div>
   </div>
 
+  <!-- メッセージモーダル -->
   <div id="messageModal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-title" id="messageModalTitle">お知らせ</div>
@@ -336,61 +364,104 @@
     </div>
   </div>
 
-  <!-- ヘッダー: 担当TMバッジ表示。タップでチーム切り替え -->
-  <div class="header-panel" onclick="openTeamSelectModal()" style="cursor:pointer;">
+  <!-- ヘッダー -->
+  <div class="header-panel" id="headerPanel" onclick="openTeamSelectModal()" style="cursor:pointer;">
     <div class="header-left">
-      <div class="header-title">📦 CO-30 現場検品</div>
+      <div class="header-title" id="headerTitle">📦 CO-30 現場検品</div>
       <div id="teamBadge" class="header-team">タップしてチーム選択</div>
     </div>
     <div class="header-counter">
-      <span>検品済</span>
+      <span id="counterLabel">検品済</span>
       <div id="totalQty" class="counter-badge">0</div>
     </div>
+  </div>
+
+  <!-- モード切り替えタブ -->
+  <div class="mode-tabs">
+    <button class="mode-tab active-inspect" id="tab-inspect" onclick="switchMode('inspect')">
+      📦 検品モード
+    </button>
+    <button class="mode-tab" id="tab-return" onclick="switchMode('return')">
+      🔄 返却モード
+    </button>
+  </div>
+
+  <!-- 返却モードバナー -->
+  <div class="mode-banner" id="modeBanner">
+    🔄 返却モード: QRをスキャンするとライフサイクルが「返却済」に更新されます
   </div>
 
   <div id="locationBar" class="location-bar">拠点: 未選択</div>
 
   <div class="item-list-container" id="itemList"></div>
 
-  <!-- 下部固定スキャンボタン(レジゴー風) -->
+  <!-- 下部固定スキャンボタン -->
   <div class="scan-dock">
-    <button class="btn-scan-bottom" onclick="openScanner()">
+    <button class="btn-scan-bottom" id="btnScan" onclick="openScanner()">
       <span class="icon">📷</span>
-      <span>カメラでスキャン</span>
+      <span id="scanBtnLabel">カメラでスキャン</span>
     </button>
     <button class="btn-manual-mini" onclick="openInputModal()">🔢 コード手動入力</button>
   </div>
 
   <script>
     /* =========================================================
-       設定: Apps Script Webアプリの /exec URL
+       設定
        ========================================================= */
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbx9pRf_C9fz76PuUH89TflY0Salm6NXe1HitBx5k80BNw3oi2FHU81aV-W8r2qwvOs/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxomX0AYbyx_okPBoiS-JJhjOn-mooSk8RElD9y-5F1ijHRNHJgrERgY-M_TZrPQfGh/exec";
 
     const urlParams = new URLSearchParams(window.location.search);
     let activeLocation = urlParams.get('loc') || "";
-    let activeTeam = ""; // "運送" | "レンタル" | "両方"
+    let activeTeam = "";
+    let currentMode = 'inspect'; // 'inspect' | 'return'
 
-    // 🆕 表示用(選択中TMのみ)と、判定用(全TM)を別々に保持
-    let displayItems = [];   // リスト表示・数量操作の対象(選択中TMのみ)
-    let allItemsByCode = {}; // 担当外チェック用：コード→{name, team} の全件マップ
-
-    let groupMap = {};      // displayItems を元にしたグルーピング(表示用)
+    let displayItems = [];
+    let allItemsByCode = {};
+    let groupMap = {};
     let groupOrder = [];
     let latestCode = null;
 
     let lastScannedCode = null;
     let lastScannedAt = 0;
     const SCAN_COOLDOWN_MS = 1200;
-
     const syncingCodes = new Set();
 
+    /* =========================================================
+       モード切り替え
+       ========================================================= */
+    function switchMode(mode) {
+      currentMode = mode;
+      const isReturn = (mode === 'return');
+
+      // タブ
+      document.getElementById('tab-inspect').className = 'mode-tab' + (isReturn ? '' : ' active-inspect');
+      document.getElementById('tab-return').className  = 'mode-tab' + (isReturn ? ' active-return' : '');
+
+      // ヘッダー色
+      document.getElementById('headerPanel').classList.toggle('mode-return', isReturn);
+      document.getElementById('locationBar').classList.toggle('mode-return', isReturn);
+
+      // バナー
+      document.getElementById('modeBanner').classList.toggle('show', isReturn);
+
+      // スキャンボタン色・ラベル
+      document.getElementById('btnScan').classList.toggle('mode-return', isReturn);
+      document.getElementById('scanBtnLabel').textContent = isReturn ? '返却スキャン' : 'カメラでスキャン';
+
+      // ヘッダータイトル・カウンター
+      document.getElementById('headerTitle').textContent = isReturn ? '🔄 CO-30 返却処理' : '📦 CO-30 現場検品';
+      document.getElementById('counterLabel').textContent = isReturn ? '返却済' : '検品済';
+
+      renderList();
+    }
+
+    /* =========================================================
+       TM選択
+       ========================================================= */
     window.onload = function() {
-      if (activeLocation) {
-        document.getElementById("locationBar").innerText = `拠点: ${activeLocation}`;
-      } else {
-        document.getElementById("locationBar").innerText = `拠点: すべて`;
-      }
+      document.getElementById("locationBar").innerText =
+        activeLocation ? `拠点: ${activeLocation}` : `拠点: すべて`;
+
       const savedTeam = localStorage.getItem('scanner_active_team');
       if (savedTeam) {
         activeTeam = savedTeam;
@@ -401,9 +472,6 @@
       }
     };
 
-    /* =========================================================
-       TM選択
-       ========================================================= */
     function openTeamSelectModal() {
       document.getElementById('teamSelectModal').classList.add('show');
     }
@@ -418,19 +486,16 @@
       const badge = document.getElementById('teamBadge');
       badge.classList.remove('transport', 'rental', 'both');
       if (activeTeam === '運送') {
-        badge.innerText = '🚛 運送TM';
-        badge.classList.add('transport');
+        badge.innerText = '🚛 運送TM'; badge.classList.add('transport');
       } else if (activeTeam === 'レンタル') {
-        badge.innerText = '🏢 レンタルTM';
-        badge.classList.add('rental');
-      } else if (activeTeam === '両方') {
-        badge.innerText = '🌐 両方表示';
-        badge.classList.add('both');
+        badge.innerText = '🏢 レンタルTM'; badge.classList.add('rental');
+      } else {
+        badge.innerText = '🌐 両方表示'; badge.classList.add('both');
       }
     }
 
     /* =========================================================
-       Apps Script との通信
+       データ取得
        ========================================================= */
     async function gasGet(action, params = {}) {
       const u = new URL(GAS_API_URL);
@@ -440,7 +505,6 @@
       if (!res.ok) throw new Error("HTTP " + res.status);
       return await res.json();
     }
-
     async function gasPost(action, body = {}) {
       const res = await fetch(GAS_API_URL, {
         method: 'POST',
@@ -454,25 +518,18 @@
     async function loadRealData() {
       document.getElementById("loading").style.display = "flex";
       try {
-        // 🆕 サーバーは { display: [...], all: [...] } の形で返す
-        const res = await gasGet('getInspectionData', {
-          location: activeLocation,
-          team: activeTeam
-        });
+        const res = await gasGet('getInspectionData', { location: activeLocation, team: activeTeam });
         displayItems = (res && res.display) ? res.display : [];
         const allItems = (res && res.all) ? res.all : [];
-
-        // 全件データをコードベースのマップに変換(担当外チェック用)
         allItemsByCode = {};
         allItems.forEach(item => {
-          allItemsByCode[item.code] = { name: item.name, team: item.team };
+          allItemsByCode[item.code] = { name: item.name, team: item.team, lifecycle: item.lifecycle };
         });
-
         buildGroups();
-        groupOrder = Object.keys(groupMap).sort((codeA, codeB) => {
-          const latestA = Math.max(...groupMap[codeA].indices.map(idx => displayItems[idx].updatedAt || 0));
-          const latestB = Math.max(...groupMap[codeB].indices.map(idx => displayItems[idx].updatedAt || 0));
-          return latestB - latestA;
+        groupOrder = Object.keys(groupMap).sort((a, b) => {
+          const la = Math.max(...groupMap[a].indices.map(i => displayItems[i].updatedAt || 0));
+          const lb = Math.max(...groupMap[b].indices.map(i => displayItems[i].updatedAt || 0));
+          return lb - la;
         });
         renderList();
       } catch (err) {
@@ -493,10 +550,9 @@
     }
 
     function getGroupTotals(code) {
-      const indices = groupMap[code].indices;
       let planTotal = 0, actualTotal = 0;
-      indices.forEach(idx => {
-        planTotal += displayItems[idx].plan;
+      groupMap[code].indices.forEach(idx => {
+        planTotal  += displayItems[idx].plan;
         actualTotal += displayItems[idx].actual;
       });
       return { planTotal, actualTotal };
@@ -510,12 +566,9 @@
       groupOrder = groupOrder.filter(c => c !== code);
     }
 
-    function teamTagClass(team) {
-      if (team === '運送') return 'transport';
-      if (team === 'レンタル') return 'rental';
-      return '';
-    }
-
+    /* =========================================================
+       リスト描画
+       ========================================================= */
     function renderList() {
       const listContainer = document.getElementById("itemList");
       const totalActual = displayItems.reduce((sum, it) => sum + it.actual, 0);
@@ -524,7 +577,7 @@
       listContainer.innerHTML = "";
 
       if (displayItems.length === 0) {
-        listContainer.innerHTML = '<p class="empty-hint">このチームの検品対象データがありません。<br>先にCO-30一括生成を行ってください。</p>';
+        listContainer.innerHTML = '<p class="empty-hint">このチームの検品対象データがありません。</p>';
         return;
       }
 
@@ -534,35 +587,52 @@
       });
 
       if (visibleCodes.length === 0) {
-        listContainer.innerHTML = '<p class="empty-hint">📷 QRコードをスキャンすると、<br>ここに検品済みの商品が表示されます。</p>';
+        const msg = currentMode === 'return'
+          ? '📷 QRコードをスキャンすると返却処理が記録されます。'
+          : '📷 QRコードをスキャンすると、ここに検品済みの商品が表示されます。';
+        listContainer.innerHTML = `<p class="empty-hint">${msg}</p>`;
         return;
       }
 
       visibleCodes.forEach(code => {
         const group = groupMap[code];
         const { planTotal, actualTotal } = getGroupTotals(code);
-        const isDone = actualTotal >= planTotal;
-        const isSyncing = syncingCodes.has(code);
-        const isLatest = code === latestCode;
-        const tagCls = teamTagClass(group.team);
+        const masterInfo = allItemsByCode[code] || {};
+        const lifecycle  = masterInfo.lifecycle || '';
+        const isReturned = lifecycle === '返却済';
+        const isDone     = actualTotal >= planTotal;
+        const isSyncing  = syncingCodes.has(code);
+        const isLatest   = code === latestCode;
+        const tagCls = group.team === '運送' ? 'transport' : group.team === 'レンタル' ? 'rental' : '';
 
         const card = document.createElement("div");
-        card.className = `item-card ${isDone ? 'completed' : ''} ${isSyncing ? 'syncing' : ''} ${isLatest ? 'latest' : ''}`;
+        card.className = `item-card
+          ${isDone     ? 'completed' : ''}
+          ${isReturned ? 'returned'  : ''}
+          ${isSyncing  ? 'syncing'   : ''}
+          ${isLatest   ? 'latest'    : ''}`.replace(/\s+/g, ' ').trim();
+
+        let statusHtml = '';
+        if (isReturned) {
+          statusHtml = '<div class="item-status-text status-returned">✅ 返却済</div>';
+        } else if (isDone) {
+          statusHtml = '<div class="item-status-text status-ok">✓ 検品完了</div>';
+        } else {
+          statusHtml = `<div class="item-status-text status-wait">残り ${planTotal - actualTotal} 点</div>`;
+        }
+
         card.innerHTML = `
           <div class="item-info">
             <div class="item-name">${escapeHtml(group.name)}</div>
             <div class="item-code">コード: ${escapeHtml(code)}</div>
             ${activeTeam === '両方' && tagCls ? `<span class="item-team-tag ${tagCls}">${escapeHtml(group.team)}TM</span>` : ''}
-            <div class="item-status-text ${isDone ? 'status-ok' : 'status-wait'}">
-              ${isDone ? '✓ 検品完了' : `残り ${planTotal - actualTotal} 点`}
-            </div>
+            ${statusHtml}
           </div>
           <div class="qty-controls">
             <button class="btn-qty" ${isSyncing ? 'disabled' : ''} onclick="changeQtyGroup('${escapeJs(code)}', -1)">-</button>
             <div class="qty-display">${actualTotal} / ${planTotal}</div>
             <button class="btn-qty" ${isSyncing ? 'disabled' : ''} onclick="changeQtyGroup('${escapeJs(code)}', 1)">+</button>
-          </div>
-        `;
+          </div>`;
         listContainer.appendChild(card);
       });
     }
@@ -570,10 +640,11 @@
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
-    function escapeJs(s) {
-      return String(s).replace(/['\\]/g, '\\$&');
-    }
+    function escapeJs(s) { return String(s).replace(/['\\]/g, '\\$&'); }
 
+    /* =========================================================
+       検品数量変更
+       ========================================================= */
     async function changeQtyGroup(code, amount) {
       if (syncingCodes.has(code)) return;
       const group = groupMap[code];
@@ -582,16 +653,10 @@
       let targetIndex = null;
       if (amount > 0) {
         targetIndex = group.indices.find(idx => displayItems[idx].actual < displayItems[idx].plan);
-        if (targetIndex === undefined) {
-          showToast(`⚠️ ${group.name} は既に必要数に達しています`);
-          return;
-        }
+        if (targetIndex === undefined) { showToast(`⚠️ ${group.name} は既に必要数に達しています`); return; }
       } else {
         for (let i = group.indices.length - 1; i >= 0; i--) {
-          if (displayItems[group.indices[i]].actual > 0) {
-            targetIndex = group.indices[i];
-            break;
-          }
+          if (displayItems[group.indices[i]].actual > 0) { targetIndex = group.indices[i]; break; }
         }
         if (targetIndex === null) return;
       }
@@ -602,103 +667,121 @@
 
       const previousQty = item.actual;
       item.actual = nextQty;
-
       const { actualTotal: newActualTotal } = getGroupTotals(code);
-      if (newActualTotal > 0) {
-        bringGroupToFront(code);
-        latestCode = code;
-      } else {
-        removeGroupFromOrder(code);
-        latestCode = null;
-      }
+      if (newActualTotal > 0) { bringGroupToFront(code); latestCode = code; }
+      else { removeGroupFromOrder(code); latestCode = null; }
 
       syncingCodes.add(code);
       renderList();
 
       try {
         const res = await gasPost('updateInspectionQty', {
-          location: activeLocation,
-          itemCode: item.code,
-          newQty: nextQty,
-          rowId: item.rowId
+          location: activeLocation, itemCode: item.code,
+          newQty: nextQty, rowId: item.rowId
         });
         syncingCodes.delete(code);
         if (!res || !res.success) {
           item.actual = previousQty;
           const { actualTotal: rollbackTotal } = getGroupTotals(code);
           if (rollbackTotal === 0) removeGroupFromOrder(code);
-          showToast("⚠️ シートの同期に失敗したため元に戻しました: " + (res && res.error ? res.error : ""));
+          showToast("⚠️ 同期失敗: " + (res && res.error ? res.error : ""), true);
         } else {
           if (res.updatedAt) item.updatedAt = res.updatedAt;
           if (res.rowId) item.rowId = res.rowId;
         }
-        renderList();
       } catch (err) {
         syncingCodes.delete(code);
         item.actual = previousQty;
-        const { actualTotal: rollbackTotal } = getGroupTotals(code);
-        if (rollbackTotal === 0) removeGroupFromOrder(code);
-        showToast("⚠️ 通信エラーのため元に戻しました: " + err.message);
-        renderList();
+        showToast("⚠️ 通信エラー: " + err.message, true);
       }
+      renderList();
     }
 
-    /**
-     * 🆕 スキャン成功時の処理。
-     * 1. まず「全件マップ(allItemsByCode)」でコードの実在と担当TMを確認
-     * 2. 担当外なら(両方モード以外で)赤エラー
-     * 3. 担当内 or 両方モードなら、表示中リスト(groupMap)で数量加算
-     */
+    /* =========================================================
+       スキャン成功時の共通処理
+       ========================================================= */
     function onScanSuccess(decodedText) {
       const cleanCode = (decodedText || "").trim();
       if (!cleanCode) return;
 
       const now = Date.now();
-      if (cleanCode === lastScannedCode && (now - lastScannedAt) < SCAN_COOLDOWN_MS) {
-        return;
-      }
+      if (cleanCode === lastScannedCode && (now - lastScannedAt) < SCAN_COOLDOWN_MS) return;
       lastScannedCode = cleanCode;
       lastScannedAt = now;
 
-      const masterInfo = allItemsByCode[cleanCode]; // {name, team} or undefined
+      const masterInfo = allItemsByCode[cleanCode];
 
+      // 未登録チェック
       if (!masterInfo) {
-        showToast(`❌ 未登録コード: ${cleanCode}`, true);
+        showToast(`❌ 未登録コード: ${cleanCode}`, 'error');
         playErrorBeep();
-        flashScannerFrame(true);
+        flashScannerFrame('error');
         return;
       }
 
-      // 担当外チェック(「両方」モードでは常にOK)
+      // 担当外チェック
       if (activeTeam !== '両方' && masterInfo.team && masterInfo.team !== activeTeam) {
-        showToast(`❌ 担当外: ${masterInfo.team}TMの物品です(${masterInfo.name})`, true);
+        showToast(`❌ 担当外: ${masterInfo.team}TMの物品です(${masterInfo.name})`, 'error');
         playErrorBeep();
-        flashScannerFrame(true);
+        flashScannerFrame('error');
         return;
       }
 
-      // ここまで来たら担当内 → 表示中リストのグループに加算
-      const group = groupMap[cleanCode];
-      if (!group) {
-        // 理論上は起きないはずだが、念のためのフォールバック
-        showToast(`❌ 表示データに見つかりません: ${cleanCode}`, true);
-        flashScannerFrame(true);
-        return;
+      if (currentMode === 'return') {
+        // ===== 返却モード =====
+        handleReturnScan(cleanCode, masterInfo);
+      } else {
+        // ===== 検品モード =====
+        handleInspectScan(cleanCode, masterInfo);
       }
+    }
 
-      const totalsBefore = getGroupTotals(cleanCode);
+    function handleInspectScan(code, masterInfo) {
+      const group = groupMap[code];
+      if (!group) { showToast(`❌ 表示データに見つかりません: ${code}`, 'error'); return; }
+
+      const totalsBefore = getGroupTotals(code);
       if (totalsBefore.actualTotal < totalsBefore.planTotal) {
-        changeQtyGroup(cleanCode, 1);
+        changeQtyGroup(code, 1);
         showToast(`🟢 ピッ！ ${masterInfo.name}`);
         playBeep();
-        flashScannerFrame(false);
+        flashScannerFrame('ok');
         if (navigator.vibrate) navigator.vibrate(50);
-        if (getAutoCloseEnabled()) {
-          closeScanner();
-        }
+        if (getAutoCloseEnabled()) closeScanner();
       } else {
         showToast(`⚠️ ${masterInfo.name} は既に必要数に達しています`);
-        flashScannerFrame(false);
+        flashScannerFrame('ok');
+      }
+    }
+
+    async function handleReturnScan(code, masterInfo) {
+      // 返却済チェック
+      if (masterInfo.lifecycle === '返却済') {
+        showToast(`⚠️ ${masterInfo.name} はすでに返却済みです`, 'error');
+        flashScannerFrame('error');
+        return;
+      }
+
+      showToast(`🔄 返却処理中: ${masterInfo.name}`, 'return');
+      flashScannerFrame('return');
+      if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+      if (getAutoCloseEnabled()) closeScanner();
+
+      try {
+        const res = await gasPost('updateLifecycle', {
+          itemCode: code,
+          lifecycle: '返却済'
+        });
+        if (res && res.success) {
+          // ローカルの allItemsByCode を更新
+          if (allItemsByCode[code]) allItemsByCode[code].lifecycle = '返却済';
+          showToast(`✅ 返却済に更新: ${masterInfo.name}`, 'return');
+          renderList();
+        } else {
+          showToast(`❌ 更新失敗: ${res && res.error ? res.error : '不明なエラー'}`, 'error');
+        }
+      } catch (err) {
+        showToast(`❌ 通信エラー: ${err.message}`, 'error');
       }
     }
 
@@ -712,8 +795,7 @@
       localStorage.setItem('scanner_auto_close', val ? 'yes' : 'no');
     }
     function onAutoCloseToggleChange() {
-      const cb = document.getElementById('autoCloseToggle');
-      setAutoCloseEnabled(cb.checked);
+      setAutoCloseEnabled(document.getElementById('autoCloseToggle').checked);
     }
     window.addEventListener('DOMContentLoaded', function() {
       const cb = document.getElementById('autoCloseToggle');
@@ -724,18 +806,15 @@
        ライブカメラスキャナー
        ========================================================= */
     let scannerStream = null;
-    let scannerRAF = null;
+    let scannerRAF   = null;
 
     function openScanner() {
-      if (!activeTeam) {
-        openTeamSelectModal();
-        return;
-      }
+      if (!activeTeam) { openTeamSelectModal(); return; }
       ensureAudioContext();
-      const overlay = document.getElementById("scannerOverlay");
-      const video = document.getElementById("scannerVideo");
-      const statusEl = document.getElementById("scannerStatus");
 
+      const overlay  = document.getElementById("scannerOverlay");
+      const video    = document.getElementById("scannerVideo");
+      const statusEl = document.getElementById("scannerStatus");
       overlay.classList.add("show");
       statusEl.innerText = "カメラを起動しています...";
 
@@ -746,113 +825,82 @@
       }
 
       navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false
       }).then(function(stream) {
         scannerStream = stream;
         video.srcObject = stream;
         video.onloadedmetadata = function() {
           video.play();
-          statusEl.innerText = "QRコードを枠の中に入れてください(自動で読み取ります)";
+          const modeLabel = currentMode === 'return' ? '返却するQRコードを枠に入れてください' : 'QRコードを枠の中に入れてください(自動で読み取ります)';
+          statusEl.innerText = modeLabel;
           scanLoop();
         };
       }).catch(function(err) {
         closeScanner();
-        showMessageModal(
-          "カメラを起動できません",
-          "カメラへのアクセスが許可されていない可能性があります。\n\n詳細: " + err.message
-        );
+        showMessageModal("カメラを起動できません", "カメラへのアクセスが許可されていない可能性があります。\n\n詳細: " + err.message);
       });
     }
 
     function scanLoop() {
       if (!scannerStream) return;
-      const video = document.getElementById("scannerVideo");
+      const video  = document.getElementById("scannerVideo");
       const canvas = document.getElementById("scannerCanvas");
 
       if (video.readyState === video.HAVE_ENOUGH_DATA) {
         const vw = video.videoWidth, vh = video.videoHeight;
         if (vw && vh) {
-          const targetWidths = [vw, 800, 480];
           let result = null;
-
-          for (const targetW of targetWidths) {
+          for (const targetW of [vw, 800, 480]) {
             const scale = Math.min(1, targetW / vw);
-            const cw = Math.round(vw * scale);
-            const ch = Math.round(vh * scale);
-            canvas.width = cw;
-            canvas.height = ch;
+            const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
+            canvas.width = cw; canvas.height = ch;
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
             ctx.drawImage(video, 0, 0, cw, ch);
-
             try {
               const imageData = ctx.getImageData(0, 0, cw, ch);
               result = jsQR(imageData.data, cw, ch, { inversionAttempts: "attemptBoth" });
               if (result && result.data) break;
             } catch (e) {}
           }
-
-          if (result && result.data) {
-            // onScanSuccess内でフラッシュ・自動クローズ判定まで一括して行う
-            onScanSuccess(result.data);
-          }
+          if (result && result.data) onScanSuccess(result.data);
         }
       }
-
       scannerRAF = requestAnimationFrame(scanLoop);
     }
 
-    function flashScannerFrame(isError) {
+    function flashScannerFrame(type) {
       const frame = document.getElementById("scannerFrame");
-      const cls = isError ? 'flash-error' : 'flash';
+      frame.classList.remove('flash', 'flash-return', 'flash-error');
+      const cls = type === 'ok' ? 'flash' : type === 'return' ? 'flash-return' : 'flash-error';
       frame.classList.add(cls);
       setTimeout(() => frame.classList.remove(cls), 250);
     }
 
     function closeScanner() {
-      if (scannerRAF) {
-        cancelAnimationFrame(scannerRAF);
-        scannerRAF = null;
-      }
-      if (scannerStream) {
-        scannerStream.getTracks().forEach(t => t.stop());
-        scannerStream = null;
-      }
-      const video = document.getElementById("scannerVideo");
-      video.srcObject = null;
+      if (scannerRAF) { cancelAnimationFrame(scannerRAF); scannerRAF = null; }
+      if (scannerStream) { scannerStream.getTracks().forEach(t => t.stop()); scannerStream = null; }
+      document.getElementById("scannerVideo").srcObject = null;
       document.getElementById("scannerOverlay").classList.remove("show");
     }
 
     /* =========================================================
-       コード手動入力
+       手動入力
        ========================================================= */
     function openInputModal() {
-      const modal = document.getElementById("inputModal");
-      const input = document.getElementById("manualCodeInput");
-      input.value = "";
-      modal.classList.add("show");
-      setTimeout(() => input.focus(), 150);
+      document.getElementById("manualCodeInput").value = "";
+      document.getElementById("inputModal").classList.add("show");
+      setTimeout(() => document.getElementById("manualCodeInput").focus(), 150);
     }
-    function closeInputModal() {
-      document.getElementById("inputModal").classList.remove("show");
-    }
+    function closeInputModal() { document.getElementById("inputModal").classList.remove("show"); }
     function submitManualCode() {
-      const input = document.getElementById("manualCodeInput");
-      const code = input.value.trim();
+      const code = document.getElementById("manualCodeInput").value.trim();
       closeInputModal();
       if (code) onScanSuccess(code);
     }
     document.addEventListener("DOMContentLoaded", function() {
       const input = document.getElementById("manualCodeInput");
-      if (input) {
-        input.addEventListener("keydown", function(e) {
-          if (e.key === "Enter") { e.preventDefault(); submitManualCode(); }
-        });
-      }
+      if (input) input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submitManualCode(); } });
     });
 
     function showMessageModal(title, body) {
@@ -860,60 +908,38 @@
       document.getElementById("messageModalBody").innerText = body;
       document.getElementById("messageModal").classList.add("show");
     }
-    function closeMessageModal() {
-      document.getElementById("messageModal").classList.remove("show");
-    }
+    function closeMessageModal() { document.getElementById("messageModal").classList.remove("show"); }
 
     /* =========================================================
-       ビープ音(WebAudio)
+       ビープ音
        ========================================================= */
     let audioCtx = null;
     function ensureAudioContext() {
       if (audioCtx) return;
-      try {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (AC) audioCtx = new AC();
-      } catch (e) {}
+      try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); } catch (e) {}
     }
-    function playBeep() {
+    function _playTone(freq, type, duration) {
       if (!audioCtx) return;
       try {
         if (audioCtx.state === 'suspended') audioCtx.resume();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
         gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.4, audioCtx.currentTime + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(audioCtx.currentTime);
-        osc.stop(audioCtx.currentTime + 0.16);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + duration + 0.01);
       } catch (e) {}
     }
-    function playErrorBeep() {
-      if (!audioCtx) return;
-      try {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.3, audioCtx.currentTime + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start(audioCtx.currentTime);
-        osc.stop(audioCtx.currentTime + 0.36);
-      } catch (e) {}
-    }
+    function playBeep()      { _playTone(880, 'sine',   0.15); }  // 検品: 高いピッ
+    function playReturnBeep(){ _playTone(660, 'sine',   0.25); _playTone(880, 'sine', 0.15); } // 返却: 2音
+    function playErrorBeep() { _playTone(220, 'square', 0.35); }  // エラー: 低いブッ
 
-    function showToast(msg, isError) {
+    function showToast(msg, type) {
       const toast = document.getElementById("toast");
       toast.innerText = msg;
-      toast.classList.toggle('error', !!isError);
+      toast.className = 'toast' + (type ? ' ' + type : '');
       toast.style.display = "block";
       setTimeout(() => { toast.style.display = "none"; }, 2400);
     }

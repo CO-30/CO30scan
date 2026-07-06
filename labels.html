@@ -2576,12 +2576,16 @@ var qrcode = function() {
         // QRコード画像(Google Charts API)
         // chs=サイズ / cht=qr(QRコード) / chl=内容 / choe=文字コード
        // qrcode-generatorライブラリでQRコードを生成
-        const qr = qrcode(0, 'M');
+        const qr = qrcode(4, 'M');
         qr.addData(item.code);
         qr.make();
+        const cellSize = 4;
+        const margin = 0;
+        const src = 'data:image/svg+xml;charset=UTF-8,'
+          + encodeURIComponent(qr.createSvgTag(cellSize, margin));
 
         const img = document.createElement('img');
-        img.src = qr.createDataURL(4, 0);
+        img.src = src;
         img.alt = item.code;
         img.className = 'qr-img';
         div.appendChild(img);

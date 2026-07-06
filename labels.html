@@ -4,24 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CO-30 QRラベル印刷</title>
-  <!-- QRコード生成ライブラリ -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <style>
-    /* ===== 画面表示用 ===== */
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #f4f6f7;
-      margin: 0;
-      padding: 0;
+      margin: 0; padding: 0;
       color: #333;
     }
 
-    .screen-only {
-      /* 印刷時は非表示 */
-    }
-
-    /* ヘッダー */
+    /* ===== 画面表示 ===== */
     .header {
       background: #2c5f8a;
       color: #fff;
@@ -34,7 +26,6 @@
     .header h1 { margin: 0; font-size: 16px; font-weight: bold; }
     .header .sub { font-size: 12px; opacity: 0.8; margin-top: 2px; }
 
-    /* フィルターバー */
     .filter-bar {
       background: #fff;
       padding: 12px 20px;
@@ -54,24 +45,15 @@
       background: #fff;
     }
     .filter-bar input[type="text"] { min-width: 180px; }
-    .filter-count {
-      font-size: 12px;
-      color: #888;
-      margin-left: auto;
-    }
+    .filter-count { font-size: 12px; color: #888; margin-left: auto; }
     .btn-print {
-      background: #2c5f8a;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 8px 18px;
-      font-size: 14px;
-      font-weight: bold;
-      cursor: pointer;
+      background: #2c5f8a; color: #fff;
+      border: none; border-radius: 8px;
+      padding: 8px 18px; font-size: 14px;
+      font-weight: bold; cursor: pointer;
     }
     .btn-print:hover { background: #1d4566; }
 
-    /* ローディング */
     .loading {
       text-align: center;
       padding: 60px 20px;
@@ -80,20 +62,16 @@
       font-weight: bold;
     }
 
-    /* ===== 画面上のラベルプレビューエリア ===== */
-    .preview-area {
-      padding: 20px;
-      max-width: 900px;
-      margin: 0 auto;
-    }
+    .preview-area { padding: 20px; }
 
-    /* ===== A4印刷レイアウト ===== */
-    /* 1ラベルのサイズ: 約47mm x 47mm (A4に4列x5行=20枚) */
+    /* ===== ラベルグリッド(画面) ===== */
     @media screen {
       .label-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 8px;
+        max-width: 900px;
+        margin: 0 auto;
       }
       .label-item {
         background: #fff;
@@ -104,37 +82,28 @@
         flex-direction: column;
         align-items: center;
         gap: 4px;
-        min-height: 90px;
+        min-height: 100px;
       }
     }
 
+    /* ===== 印刷レイアウト ===== */
     @media print {
-      @page {
-        size: A4;
-        margin: 8mm;
-      }
-      body {
-        background: #fff;
-        margin: 0;
-        padding: 0;
-      }
-      .screen-only { display: none !important; }
+      @page { size: A4; margin: 8mm; }
+      body { background: #fff; margin: 0; padding: 0; }
+      .print-hide { display: none !important; }
       .preview-area { padding: 0; }
 
       .label-grid {
         display: grid;
-        /* A4(190mm有効幅) に4列 = 1列約47mm */
         grid-template-columns: repeat(4, 47mm);
-        grid-template-rows: repeat(5, 47mm);
         gap: 0;
         width: 188mm;
         margin: 0 auto;
-        page-break-inside: auto;
       }
       .label-item {
         width: 47mm;
         height: 47mm;
-        border: 0.3pt dashed #aaa; /* トンボ線 */
+        border: 0.3pt dashed #aaa;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -146,20 +115,22 @@
       }
     }
 
-    .label-item canvas {
-      /* QRコード: 画面では大きめ、印刷時は2cm角 */
+    /* ===== QRコード画像 ===== */
+    .qr-img {
       display: block;
+      border: none;
     }
     @media screen {
-      .label-item canvas { width: 70px !important; height: 70px !important; }
+      .qr-img { width: 80px; height: 80px; }
     }
     @media print {
-      .label-item canvas { width: 20mm !important; height: 20mm !important; }
+      .qr-img { width: 20mm; height: 20mm; }
     }
 
+    /* ===== 物品コードテキスト ===== */
     .label-code {
       font-family: "SF Mono", "Roboto Mono", "Consolas", monospace;
-      font-size: 9px;
+      font-size: 10px;
       font-weight: bold;
       text-align: center;
       color: #222;
@@ -167,17 +138,7 @@
       line-height: 1.3;
     }
     @media print {
-      .label-code {
-        font-size: 6pt;
-      }
-    }
-
-    /* ページ区切り(20枚ごと) */
-    .page-break {
-      page-break-after: always;
-    }
-    @media screen {
-      .page-break { display: none; }
+      .label-code { font-size: 6pt; }
     }
 
     .empty-state {
@@ -191,13 +152,13 @@
 <body>
 
   <!-- ヘッダー -->
-  <div class="header screen-only">
+  <div class="header print-hide">
     <h1>🏷️ CO-30 QRラベル印刷</h1>
     <div class="sub">物品に貼り付けるQRコードラベルを印刷します</div>
   </div>
 
   <!-- フィルターバー -->
-  <div class="filter-bar screen-only">
+  <div class="filter-bar print-hide">
     <select id="f-location"><option value="">拠点: すべて</option></select>
     <select id="f-team">
       <option value="">担当TM: すべて</option>
@@ -210,7 +171,7 @@
   </div>
 
   <!-- ローディング -->
-  <div class="loading" id="loading">⏳ データを取得中...</div>
+  <div class="loading print-hide" id="loading">⏳ データを取得中...</div>
 
   <!-- ラベルプレビュー -->
   <div class="preview-area" id="preview-area" style="display:none;">
@@ -219,7 +180,7 @@
 
   <script>
     /* =========================================================
-       設定: Apps Script Webアプリの /exec URL
+       設定
        ========================================================= */
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxNEE_cTr3b_M3yyra5Qd3BON-FXkhPv7Qp22IGrkEEwQq7S8j7p6eWUdalxA-V_eeT/exec";
 
@@ -234,14 +195,14 @@
         u.searchParams.set('action', 'getInspectionData');
         u.searchParams.set('location', '');
         u.searchParams.set('team', '');
-        const res = await fetch(u.toString());
+        const res  = await fetch(u.toString());
         const json = await res.json();
-        // { display: [...], all: [...] } または配列どちらにも対応
-        allItems = Array.isArray(json) ? json : (json.all || json.display || []);
 
-        // 重複除去(同一コードは1枚だけ)
+        const raw = Array.isArray(json) ? json : (json.all || json.display || []);
+
+        // 同一コードは1枚のみ(重複除去)
         const seen = new Set();
-        allItems = allItems.filter(item => {
+        allItems = raw.filter(item => {
           if (seen.has(item.code)) return false;
           seen.add(item.code);
           return true;
@@ -255,11 +216,11 @@
     }
 
     /* =========================================================
-       フィルターの選択肢を構築
+       拠点フィルター選択肢を構築
        ========================================================= */
     function buildLocationOptions() {
-      const locs = Array.from(new Set(allItems.map(i => i.location))).sort();
-      const sel = document.getElementById('f-location');
+      const locs = Array.from(new Set(allItems.map(i => i.location).filter(Boolean))).sort();
+      const sel  = document.getElementById('f-location');
       locs.forEach(loc => {
         const opt = document.createElement('option');
         opt.value = loc;
@@ -276,8 +237,8 @@
       const team   = document.getElementById('f-team').value;
       const search = document.getElementById('f-search').value.trim().toLowerCase();
       return allItems.filter(item => {
-        if (loc    && item.location !== loc)  return false;
-        if (team   && item.team    !== team)  return false;
+        if (loc  && item.location !== loc)  return false;
+        if (team && item.team    !== team)  return false;
         if (search) {
           const hay = (item.code + ' ' + item.name).toLowerCase();
           if (!hay.includes(search)) return false;
@@ -288,14 +249,17 @@
 
     /* =========================================================
        ラベル描画
-       ========================================================= */
-    async function render() {
+       QRコードはGoogle Charts APIの画像URLで生成
+       (ライブラリ不要・Brave等のブロッカーに影響されない)
+       =========================================================  */
+    function render() {
       const items = getFiltered();
       document.getElementById('filter-count').textContent = `${items.length} 枚`;
       document.getElementById('loading').style.display = 'none';
 
       const grid = document.getElementById('label-grid');
       const area = document.getElementById('preview-area');
+      grid.innerHTML = '';
 
       if (items.length === 0) {
         area.style.display = 'block';
@@ -303,64 +267,46 @@
         return;
       }
 
-      grid.innerHTML = '';
       area.style.display = 'block';
 
-      // 20枚ごとにページ区切りを入れる
-      const LABELS_PER_PAGE = 20;
-
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-
-        // ラベル要素を作成
+      items.forEach(item => {
         const div = document.createElement('div');
         div.className = 'label-item';
 
-        // QRコード生成(canvas)
-        const canvas = document.createElement('canvas');
-        try {
-          await QRCode.toCanvas(canvas, item.code, {
-            width: 70,
-            margin: 1,
-            errorCorrectionLevel: 'M',
-            color: { dark: '#000000', light: '#ffffff' }
-          });
-        } catch (e) {
-          canvas.width = 70;
-          canvas.height = 70;
-          const ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#eee';
-          ctx.fillRect(0, 0, 70, 70);
-          ctx.fillStyle = '#666';
-          ctx.font = '8px sans-serif';
-          ctx.fillText('QR ERROR', 5, 35);
-        }
-        div.appendChild(canvas);
+        // QRコード画像(Google Charts API)
+        // chs=サイズ / cht=qr(QRコード) / chl=内容 / choe=文字コード
+        const qrUrl = 'https://chart.googleapis.com/chart'
+          + '?cht=qr'
+          + '&chs=200x200'
+          + '&choe=UTF-8'
+          + '&chl=' + encodeURIComponent(item.code);
 
-        // 物品コードテキスト
+        const img = document.createElement('img');
+        img.src = qrUrl;
+        img.alt = item.code;
+        img.className = 'qr-img';
+        img.onerror = function() {
+          // 画像取得失敗時はエラーテキストを表示
+          this.style.display = 'none';
+          const err = document.createElement('div');
+          err.style.cssText = 'width:80px;height:80px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:9px;color:#888;text-align:center;';
+          err.textContent = 'QR取得失敗';
+          div.insertBefore(err, div.firstChild);
+        };
+        div.appendChild(img);
+
+        // 物品コード
         const code = document.createElement('div');
         code.className = 'label-code';
         code.textContent = item.code;
         div.appendChild(code);
 
         grid.appendChild(div);
-
-        // 20枚ごとにページ区切り(印刷用)
-        if ((i + 1) % LABELS_PER_PAGE === 0 && i + 1 < items.length) {
-          const br = document.createElement('div');
-          br.className = 'page-break';
-          grid.appendChild(br);
-
-          // 新しいグリッドを開始
-          const newArea = document.createElement('div');
-          newArea.style.paddingTop = '20px';
-          area.appendChild(newArea);
-        }
-      }
+      });
     }
 
     /* =========================================================
-       イベントリスナー
+       イベント
        ========================================================= */
     ['f-location', 'f-team'].forEach(id => {
       document.getElementById(id).addEventListener('change', render);

@@ -17,31 +17,62 @@
     .btn-print { background: #2c5f8a; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 14px; font-weight: bold; cursor: pointer; }
     .btn-print:hover { background: #1d4566; }
     .status { text-align: center; padding: 40px 20px; font-size: 14px; color: #888; }
-    .preview-area { padding: 20px; }
+    .preview-area { padding: 20px; max-width: 960px; margin: 0 auto; }
 
+    .size-caption { font-size: 13px; font-weight: bold; color: #2c5f8a; margin: 18px 0 8px 0; border-left: 4px solid #2c5f8a; padding-left: 8px; }
+    .size-select { font-size: 11px; border: 1px solid #dde3e9; border-radius: 6px; padding: 2px 4px; margin-top: 4px; background: #fff; }
+
+    /* ===== 画面表示 ===== */
     @media screen {
-      .label-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-width: 900px; margin: 0 auto; }
-      .label-item { background: #fff; border: 1px dashed #bbb; border-radius: 6px; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 110px; }
-      .qr-img { width: 80px; height: 80px; display: block; }
+      .grid-s { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .grid-m { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .grid-l { display: grid; grid-template-columns: 1fr; gap: 12px; }
+      .label-item { background: #fff; border: 1px dashed #bbb; border-radius: 6px; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+      .grid-s .qr-img { width: 80px;  height: 80px;  display: block; }
+      .grid-m .qr-img { width: 150px; height: 150px; display: block; }
+      .grid-l .qr-img { width: 260px; height: 260px; display: block; }
+      .grid-m .label-code { font-size: 13px; }
+      .grid-l .label-code { font-size: 18px; }
     }
+
+    /* ===== 印刷 =====
+       小: 4列×5行(47mm角 / QR 20mm) → ほうき等の小物用
+       中: 2列×3行(94mm×88mm / QR 45mm)
+       大: A4半分(190mm×130mm / QR 100mm) → クリアボックス等の大物用
+    ===== */
     @media print {
       @page { size: A4; margin: 8mm; }
       body { background: #fff; }
       .print-hide { display: none !important; }
-      .preview-area { padding: 0; }
-      .label-grid { display: grid; grid-template-columns: repeat(4, 47mm); gap: 0; width: 188mm; margin: 0 auto; }
-      .label-item { width: 47mm; height: 47mm; border: 0.3pt dashed #aaa; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2mm; padding: 3mm; page-break-inside: avoid; overflow: hidden; }
-      .qr-img { width: 20mm !important; height: 20mm !important; }
+      .preview-area { padding: 0; max-width: none; }
+      .size-section { page-break-after: always; }
+      .size-section:last-of-type { page-break-after: auto; }
+
+      .grid-s { display: grid; grid-template-columns: repeat(4, 47mm); gap: 0; width: 188mm; margin: 0 auto; }
+      .grid-s .label-item { width: 47mm; height: 47mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2mm; padding: 3mm; page-break-inside: avoid; overflow: hidden; }
+      .grid-s .qr-img { width: 20mm !important; height: 20mm !important; }
+      .grid-s .label-code { font-size: 6pt; }
+
+      .grid-m { display: grid; grid-template-columns: repeat(2, 94mm); gap: 0; width: 188mm; margin: 0 auto; }
+      .grid-m .label-item { width: 94mm; height: 88mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3mm; padding: 4mm; page-break-inside: avoid; overflow: hidden; }
+      .grid-m .qr-img { width: 45mm !important; height: 45mm !important; }
+      .grid-m .label-code { font-size: 12pt; }
+
+      .grid-l { display: grid; grid-template-columns: 190mm; gap: 0; width: 190mm; margin: 0 auto; }
+      .grid-l .label-item { width: 190mm; height: 130mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5mm; padding: 6mm; page-break-inside: avoid; overflow: hidden; }
+      .grid-l .qr-img { width: 100mm !important; height: 100mm !important; }
+      .grid-l .label-code { font-size: 20pt; }
     }
     .label-code { font-family: "SF Mono", "Consolas", monospace; font-size: 10px; font-weight: bold; text-align: center; color: #222; word-break: break-all; line-height: 1.3; }
-    @media print { .label-code { font-size: 6pt; } }
+    .label-name { font-size: 10px; color: #666; text-align: center; word-break: break-all; }
+    @media print { .label-name { font-size: 7pt; } .grid-m .label-name { font-size: 10pt; } .grid-l .label-name { font-size: 14pt; } }
   </style>
 </head>
 <body>
 
 <div class="header print-hide">
   <h1>🏷️ CO-30 QRラベル印刷</h1>
-  <div class="sub">物品に貼り付けるQRコードラベルを印刷します</div>
+  <div class="sub">物品に貼り付けるQRコードラベルを印刷します(ラベルごとにサイズを選択できます)</div>
 </div>
 
 <div class="filter-bar print-hide">
@@ -52,21 +83,39 @@
     <option value="レンタル">🏢 レンタルTM</option>
   </select>
   <input type="text" id="f-search" placeholder="🔍 物品コード・物品名で検索">
+  <select id="bulk-size" title="表示中のラベルすべてのサイズを一括変更">
+    <option value="">一括サイズ変更...</option>
+    <option value="s">すべて 小(2cm)</option>
+    <option value="m">すべて 中(4.5cm)</option>
+    <option value="l">すべて 大(A4半分)</option>
+  </select>
   <span class="filter-count" id="filter-count"></span>
   <button class="btn-print" onclick="window.print()">🖨️ 印刷</button>
 </div>
 
 <div class="status" id="status">⏳ データを取得中...</div>
 <div class="preview-area" id="preview-area" style="display:none;">
-  <div class="label-grid" id="label-grid"></div>
+  <div class="size-section" id="section-s">
+    <div class="size-caption print-hide">■ 小サイズ(2cm角 / A4に20枚)— ほうき等の小物向け</div>
+    <div class="label-grid grid-s" id="grid-s"></div>
+  </div>
+  <div class="size-section" id="section-m">
+    <div class="size-caption print-hide">■ 中サイズ(4.5cm角 / A4に6枚)</div>
+    <div class="label-grid grid-m" id="grid-m"></div>
+  </div>
+  <div class="size-section" id="section-l">
+    <div class="size-caption print-hide">■ 大サイズ(A4半分 / A4に2枚)— クリアボックス等の大物向け</div>
+    <div class="label-grid grid-l" id="grid-l"></div>
+  </div>
 </div>
 
 <script>
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxNEE_cTr3b_M3yyra5Qd3BON-FXkhPv7Qp22IGrkEEwQq7S8j7p6eWUdalxA-V_eeT/exec";
 var allItems = [];
+var sizeByCode = {}; // code → 's' | 'm' | 'l'(選択はフィルター変更後も維持)
 
 /* =========================================================
-   ① まずデータを取得(QR生成とは完全に独立)
+   ① データ取得
    ========================================================= */
 async function loadData() {
   try {
@@ -116,16 +165,18 @@ function getFiltered() {
 }
 
 /* =========================================================
-   ② QRコード生成(ラベル描画)
-   api.qrserver.com を img タグで使用 → CORS不要・ライブラリ不要
+   ② ラベル描画(サイズごとに3セクションへ振り分け)
    ========================================================= */
+var QR_PX = { s: 200, m: 400, l: 800 }; // サイズに応じた解像度でQR画像を取得
+
 function render() {
   var items = getFiltered();
   document.getElementById('filter-count').textContent = items.length + ' 枚';
   document.getElementById('status').style.display = 'none';
-  var grid = document.getElementById('label-grid');
   var area = document.getElementById('preview-area');
-  grid.innerHTML = '';
+
+  var grids = { s: document.getElementById('grid-s'), m: document.getElementById('grid-m'), l: document.getElementById('grid-l') };
+  grids.s.innerHTML = ''; grids.m.innerHTML = ''; grids.l.innerHTML = '';
 
   if (items.length === 0) {
     area.style.display = 'none';
@@ -133,22 +184,26 @@ function render() {
     document.getElementById('status').textContent = '該当する物品がありません';
     return;
   }
-
   area.style.display = 'block';
+
+  var counts = { s: 0, m: 0, l: 0 };
+
   items.forEach(function(item) {
+    var size = sizeByCode[item.code] || 's';
+    counts[size]++;
+
     var div = document.createElement('div');
     div.className = 'label-item';
 
-    // QRコード画像(api.qrserver.com)
+    var px = QR_PX[size];
     var img = document.createElement('img');
     img.className = 'qr-img';
     img.alt = item.code;
     img.src = 'https://api.qrserver.com/v1/create-qr-code/'
-            + '?size=200x200'
+            + '?size=' + px + 'x' + px
             + '&data=' + encodeURIComponent(item.code)
             + '&margin=1';
     img.onerror = function() {
-      // 取得失敗時はグレーのプレースホルダー
       this.style.cssText = 'width:80px;height:80px;background:#eee;display:block;';
       this.title = 'QR取得失敗: ' + item.code;
     };
@@ -159,16 +214,50 @@ function render() {
     code.textContent = item.code;
     div.appendChild(code);
 
-    grid.appendChild(div);
+    var name = document.createElement('div');
+    name.className = 'label-name';
+    name.textContent = item.name || '';
+    div.appendChild(name);
+
+    // 🆕 ラベルごとのサイズ選択(印刷には出ない)
+    var sel = document.createElement('select');
+    sel.className = 'size-select print-hide';
+    [['s', '小 2cm'], ['m', '中 4.5cm'], ['l', '大 A4半分']].forEach(function(pair) {
+      var opt = document.createElement('option');
+      opt.value = pair[0]; opt.textContent = pair[1];
+      if (pair[0] === size) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.onchange = function() {
+      sizeByCode[item.code] = sel.value;
+      render();
+    };
+    div.appendChild(sel);
+
+    grids[size].appendChild(div);
   });
+
+  // 空のセクションは非表示(印刷時の空白ページ防止)
+  document.getElementById('section-s').style.display = counts.s ? 'block' : 'none';
+  document.getElementById('section-m').style.display = counts.m ? 'block' : 'none';
+  document.getElementById('section-l').style.display = counts.l ? 'block' : 'none';
 }
 
 document.getElementById('f-location').addEventListener('change', render);
 document.getElementById('f-team').addEventListener('change', render);
 document.getElementById('f-search').addEventListener('input', render);
 
+/* 🆕 一括サイズ変更(表示中のラベルに適用) */
+document.getElementById('bulk-size').addEventListener('change', function() {
+  var v = this.value;
+  if (!v) return;
+  getFiltered().forEach(function(item) { sizeByCode[item.code] = v; });
+  this.value = '';
+  render();
+});
+
 /* =========================================================
-   ③ 最初にデータ取得を開始(他のコードに依存しない)
+   ③ 初期化
    ========================================================= */
 loadData();
 </script>

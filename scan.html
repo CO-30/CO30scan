@@ -108,7 +108,7 @@
     .mode-banner.show { display: block; }
 
     /* ===== リスト ===== */
-    .item-list-container { padding: 12px; padding-bottom: 160px; }
+    .item-list-container { padding: 12px; padding-bottom: 180px; }
     .empty-hint {
       text-align: center; color: #aaa;
       padding: 40px 20px; font-size: 14px; line-height: 1.6;
@@ -171,6 +171,7 @@
       bottom: 0; left: 0; width: 100%;
       background: linear-gradient(to top, rgba(244,246,247,1) 0%, rgba(244,246,247,1) 60%, rgba(244,246,247,0) 100%);
       padding: 30px 14px 18px 14px;
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
       z-index: 100;
       display: flex;
       flex-direction: column;
@@ -200,6 +201,7 @@
     }
     .btn-scan-bottom:active { transform: scale(0.97); opacity: 0.9; }
     .btn-scan-bottom .icon { font-size: 24px; }
+    .dock-mini-row { display: flex; gap: 10px; }
     .btn-manual-mini {
       background: rgba(0,0,0,0.06);
       color: #555;
@@ -262,39 +264,68 @@
     .team-option.both      { border-color: #9b59b6; }
     .team-option-sub { font-size: 12px; color: #888; font-weight: normal; margin-top: 4px; }
 
+    /* ===== 🆕 依頼一覧モーダル ===== */
+    .request-list-box { max-width: 440px; max-height: 84vh; display: flex; flex-direction: column; }
+    .request-list { overflow-y: auto; flex: 1; margin-bottom: 14px; -webkit-overflow-scrolling: touch; }
+    .req-card { border: 1px solid #eee; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: #fafbfc; }
+    .req-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .req-no { font-weight: bold; font-size: 14px; color: #333; }
+    .req-no.unassigned { color: #aaa; font-weight: normal; }
+    .req-badge { font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
+    .req-badge.b-wait   { background: #e67e22; }
+    .req-badge.b-ready  { background: #3498db; }
+    .req-badge.b-done   { background: #27ae60; }
+    .req-badge.b-cancel { background: #95a5a6; }
+    .req-badge.b-other  { background: #7f8c8d; }
+    .req-sub { font-size: 11px; color: #888; margin-top: 3px; }
+    .req-items { font-size: 12px; color: #555; margin-top: 4px; line-height: 1.5; }
+    .req-team-tag { display: inline-block; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 8px; color: #fff; margin-left: 4px; }
+    .req-team-tag.transport { background: #2ecc71; }
+    .req-team-tag.rental    { background: #3498db; }
+
     /* ===== スキャナー ===== */
+    /* 🆕 閉じるボタンが下部に隠れないよう、余白+スクロール+ボタン位置を調整 */
     #scannerOverlay {
       z-index: 4000;
       background: rgba(0,0,0,0.92);
       flex-direction: column;
+      justify-content: flex-start;
+      padding: 14px;
+      padding-top: calc(env(safe-area-inset-top, 0px) + 14px);
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+      overflow-y: auto;
     }
-    .scanner-wrap { position: relative; width: 100%; max-width: 480px; }
-    #scannerVideo { width: 100%; border-radius: 14px; background: #000; display: block; }
+    .scanner-wrap { position: relative; width: 100%; max-width: 480px; margin: 0 auto; }
+    #scannerVideo { width: 100%; max-height: 48vh; object-fit: cover; border-radius: 14px; background: #000; display: block; }
     .scanner-frame {
-      position: absolute; top: 18%; left: 12%; width: 76%; height: 64%;
+      position: absolute; top: 14%; left: 12%; width: 76%; height: 70%;
       border: 3px solid rgba(255,255,255,0.85); border-radius: 14px;
       box-shadow: 0 0 0 2000px rgba(0,0,0,0.35);
       pointer-events: none;
       transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .scanner-frame.flash       { border-color: #2ecc71; box-shadow: 0 0 0 2000px rgba(46,204,113,0.15); }
+    .scanner-frame.flash        { border-color: #2ecc71; box-shadow: 0 0 0 2000px rgba(46,204,113,0.15); }
     .scanner-frame.flash-return { border-color: #8e44ad; box-shadow: 0 0 0 2000px rgba(142,68,173,0.15); }
     .scanner-frame.flash-error  { border-color: #e74c3c; box-shadow: 0 0 0 2000px rgba(231,76,60,0.15); }
     .scanner-status {
-      color: #fff; text-align: center; font-size: 13px; margin-top: 14px; min-height: 18px;
+      color: #fff; text-align: center; font-size: 13px; margin-top: 12px; min-height: 18px;
     }
     .scanner-mode-toggle {
       display: flex; align-items: center; justify-content: center; gap: 10px;
-      color: #fff; font-size: 13px; margin-top: 10px;
+      color: #fff; font-size: 13px; margin: 10px auto 0 auto;
       padding: 8px 14px; background: rgba(255,255,255,0.12);
       border-radius: 24px; max-width: 480px; width: 100%;
     }
     .scanner-mode-toggle label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
     .scanner-mode-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: #f39c12; }
     .scanner-close-btn {
-      margin-top: 14px; width: 100%; max-width: 480px; padding: 14px;
-      border-radius: 10px; font-size: 15px; font-weight: bold; border: none;
+      margin: 14px auto 0 auto;
+      margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);  /* 🆕 下部に隠れない余白 */
+      display: block;
+      width: 100%; max-width: 480px; padding: 16px;
+      border-radius: 12px; font-size: 16px; font-weight: bold; border: none;
       background: #fff; color: #333;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
     }
   </style>
 </head>
@@ -336,7 +367,7 @@
         <span>1つスキャンしたら自動で閉じる(レジゴー方式)</span>
       </label>
     </div>
-    <button class="scanner-close-btn" onclick="closeScanner()">閉じる</button>
+    <button class="scanner-close-btn" onclick="closeScanner()">✕ 閉じる</button>
     <canvas id="scannerCanvas" class="hidden"></canvas>
   </div>
 
@@ -345,10 +376,22 @@
     <div class="modal-box">
       <div class="modal-title">🔢 コード手動入力</div>
       <div class="modal-message">物品の識別コードを入力してください</div>
-      <input type="text" id="manualCodeInput" class="modal-input" placeholder="例: 設営-NFH2-A" autocomplete="off" autocapitalize="characters">
+      <input type="text" id="manualCodeInput" class="modal-input" placeholder="例: 3-2-1A" autocomplete="off" autocapitalize="characters">
       <div class="modal-buttons">
         <button class="modal-btn modal-btn-cancel" onclick="closeInputModal()">キャンセル</button>
         <button class="modal-btn modal-btn-confirm" onclick="submitManualCode()">登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🆕 依頼一覧モーダル -->
+  <div id="requestListModal" class="modal-overlay">
+    <div class="modal-box request-list-box">
+      <div class="modal-title">📋 依頼一覧(ステータス付き)</div>
+      <div class="request-list" id="requestListBody">⏳ 読み込み中...</div>
+      <div class="modal-buttons">
+        <button class="modal-btn modal-btn-cancel" onclick="closeRequestList()">閉じる</button>
+        <button class="modal-btn modal-btn-confirm" onclick="loadRequestList()">再読込</button>
       </div>
     </div>
   </div>
@@ -401,7 +444,10 @@
       <span class="icon">📷</span>
       <span id="scanBtnLabel">カメラでスキャン</span>
     </button>
-    <button class="btn-manual-mini" onclick="openInputModal()">🔢 コード手動入力</button>
+    <div class="dock-mini-row">
+      <button class="btn-manual-mini" onclick="openInputModal()">🔢 コード手動入力</button>
+      <button class="btn-manual-mini" onclick="openRequestList()">📋 依頼一覧</button>
+    </div>
   </div>
 
   <script>
@@ -433,22 +479,16 @@
       currentMode = mode;
       const isReturn = (mode === 'return');
 
-      // タブ
       document.getElementById('tab-inspect').className = 'mode-tab' + (isReturn ? '' : ' active-inspect');
       document.getElementById('tab-return').className  = 'mode-tab' + (isReturn ? ' active-return' : '');
 
-      // ヘッダー色
       document.getElementById('headerPanel').classList.toggle('mode-return', isReturn);
       document.getElementById('locationBar').classList.toggle('mode-return', isReturn);
-
-      // バナー
       document.getElementById('modeBanner').classList.toggle('show', isReturn);
 
-      // スキャンボタン色・ラベル
       document.getElementById('btnScan').classList.toggle('mode-return', isReturn);
       document.getElementById('scanBtnLabel').textContent = isReturn ? '返却スキャン' : 'カメラでスキャン';
 
-      // ヘッダータイトル・カウンター
       document.getElementById('headerTitle').textContent = isReturn ? '🔄 CO-30 返却処理' : '📦 CO-30 現場検品';
       document.getElementById('counterLabel').textContent = isReturn ? '返却済' : '検品済';
 
@@ -643,6 +683,61 @@
     function escapeJs(s) { return String(s).replace(/['\\]/g, '\\$&'); }
 
     /* =========================================================
+       🆕 依頼一覧(ステータス付き)
+       ========================================================= */
+    function openRequestList() {
+      document.getElementById('requestListModal').classList.add('show');
+      loadRequestList();
+    }
+    function closeRequestList() {
+      document.getElementById('requestListModal').classList.remove('show');
+    }
+    function statusBadge(s) {
+      switch (s) {
+        case '承認待ち':     return { cls: 'b-wait',   label: '承認待ち' };
+        case '承認':         return { cls: 'b-ready',  label: '承認' };
+        case 'CO30作成待ち': return { cls: 'b-ready',  label: 'CO30作成待ち' };
+        case '送信完了':     return { cls: 'b-done',   label: '送信完了' };
+        case '取消':         return { cls: 'b-cancel', label: '取消' };
+        default:             return { cls: 'b-other',  label: s || '不明' };
+      }
+    }
+    async function loadRequestList() {
+      const body = document.getElementById('requestListBody');
+      body.innerHTML = '⏳ 読み込み中...';
+      try {
+        const res = await gasGet('listRequests');
+        const reqs = (res && res.requests) ? res.requests : [];
+        if (!reqs.length) {
+          body.innerHTML = '<p class="empty-hint">依頼データがありません</p>';
+          return;
+        }
+        body.innerHTML = '';
+        reqs.forEach(r => {
+          const badge = statusBadge(r.status);
+          let itemsTxt = (r.items || []).slice(0, 4).map(it => `${it.name}×${it.qty || 1}`).join(' / ');
+          if ((r.items || []).length > 4) itemsTxt += ` ほか${r.items.length - 4}件`;
+          const teamCls = r.team === '運送' ? 'transport' : r.team === 'レンタル' ? 'rental' : '';
+          const div = document.createElement('div');
+          div.className = 'req-card';
+          div.innerHTML = `
+            <div class="req-top">
+              <span class="req-no ${r.reqNo ? '' : 'unassigned'}">${escapeHtml(r.reqNo || '未採番')}</span>
+              <span class="req-badge ${badge.cls}">${escapeHtml(badge.label)}</span>
+            </div>
+            <div class="req-sub">${escapeHtml(r.dept)}|${escapeHtml(r.fromLocation || '-')} → ${escapeHtml(r.toLocation || '-')}
+              ${teamCls ? `<span class="req-team-tag ${teamCls}">${escapeHtml(r.team)}TM</span>` : ''}
+            </div>
+            <div class="req-sub">搬入希望: ${escapeHtml(r.arrival || '-')}</div>
+            <div class="req-items">${escapeHtml(itemsTxt || '(物品なし)')}</div>`;
+          body.appendChild(div);
+        });
+      } catch (err) {
+        body.innerHTML = '❌ 取得エラー: ' + escapeHtml(err.message);
+      }
+    }
+
+    /* =========================================================
        検品数量変更
        ========================================================= */
     async function changeQtyGroup(code, amount) {
@@ -711,7 +806,6 @@
 
       const masterInfo = allItemsByCode[cleanCode];
 
-      // 未登録チェック
       if (!masterInfo) {
         showToast(`❌ 未登録コード: ${cleanCode}`, 'error');
         playErrorBeep();
@@ -719,7 +813,6 @@
         return;
       }
 
-      // 担当外チェック
       if (activeTeam !== '両方' && masterInfo.team && masterInfo.team !== activeTeam) {
         showToast(`❌ 担当外: ${masterInfo.team}TMの物品です(${masterInfo.name})`, 'error');
         playErrorBeep();
@@ -728,10 +821,8 @@
       }
 
       if (currentMode === 'return') {
-        // ===== 返却モード =====
         handleReturnScan(cleanCode, masterInfo);
       } else {
-        // ===== 検品モード =====
         handleInspectScan(cleanCode, masterInfo);
       }
     }
@@ -743,7 +834,7 @@
       const totalsBefore = getGroupTotals(code);
       if (totalsBefore.actualTotal < totalsBefore.planTotal) {
         changeQtyGroup(code, 1);
-        showToast(`🟢 ピッ！ ${masterInfo.name}`);
+        showToast(`🟢 ピッ! ${masterInfo.name}`);
         playBeep();
         flashScannerFrame('ok');
         if (navigator.vibrate) navigator.vibrate(50);
@@ -755,7 +846,6 @@
     }
 
     async function handleReturnScan(code, masterInfo) {
-      // 返却済チェック
       if (masterInfo.lifecycle === '返却済') {
         showToast(`⚠️ ${masterInfo.name} はすでに返却済みです`, 'error');
         flashScannerFrame('error');
@@ -763,6 +853,7 @@
       }
 
       showToast(`🔄 返却処理中: ${masterInfo.name}`, 'return');
+      playReturnBeep();
       flashScannerFrame('return');
       if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
       if (getAutoCloseEnabled()) closeScanner();
@@ -773,7 +864,6 @@
           lifecycle: '返却済'
         });
         if (res && res.success) {
-          // ローカルの allItemsByCode を更新
           if (allItemsByCode[code]) allItemsByCode[code].lifecycle = '返却済';
           showToast(`✅ 返却済に更新: ${masterInfo.name}`, 'return');
           renderList();
@@ -932,9 +1022,9 @@
         osc.start(audioCtx.currentTime); osc.stop(audioCtx.currentTime + duration + 0.01);
       } catch (e) {}
     }
-    function playBeep()      { _playTone(880, 'sine',   0.15); }  // 検品: 高いピッ
-    function playReturnBeep(){ _playTone(660, 'sine',   0.25); _playTone(880, 'sine', 0.15); } // 返却: 2音
-    function playErrorBeep() { _playTone(220, 'square', 0.35); }  // エラー: 低いブッ
+    function playBeep()      { _playTone(880, 'sine',   0.15); }
+    function playReturnBeep(){ _playTone(660, 'sine',   0.25); _playTone(880, 'sine', 0.15); }
+    function playErrorBeep() { _playTone(220, 'square', 0.35); }
 
     function showToast(msg, type) {
       const toast = document.getElementById("toast");

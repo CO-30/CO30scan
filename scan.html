@@ -264,24 +264,22 @@
     .team-option.both      { border-color: #9b59b6; }
     .team-option-sub { font-size: 12px; color: #888; font-weight: normal; margin-top: 4px; }
 
-    /* ===== 🆕 依頼一覧モーダル ===== */
+    /* ===== 🆕 依頼一覧モーダル(部門・物品・数量・番号・検品状況のみのシンプル版) ===== */
     .request-list-box { max-width: 440px; max-height: 84vh; display: flex; flex-direction: column; }
     .request-list { overflow-y: auto; flex: 1; margin-bottom: 14px; -webkit-overflow-scrolling: touch; }
     .req-card { border: 1px solid #eee; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: #fafbfc; }
     .req-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
     .req-no { font-weight: bold; font-size: 14px; color: #333; }
     .req-no.unassigned { color: #aaa; font-weight: normal; }
-    .req-badge { font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
-    .req-badge.b-wait   { background: #e67e22; }
-    .req-badge.b-ready  { background: #3498db; }
-    .req-badge.b-done   { background: #27ae60; }
-    .req-badge.b-cancel { background: #95a5a6; }
-    .req-badge.b-other  { background: #7f8c8d; }
-    .req-sub { font-size: 11px; color: #888; margin-top: 3px; }
-    .req-items { font-size: 12px; color: #555; margin-top: 4px; line-height: 1.5; }
-    .req-team-tag { display: inline-block; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 8px; color: #fff; margin-left: 4px; }
-    .req-team-tag.transport { background: #2ecc71; }
-    .req-team-tag.rental    { background: #3498db; }
+    .req-dept { font-size: 13px; color: #555; }
+    .req-progress { font-size: 11px; font-weight: bold; color: #1e8449; background: #eafaf1; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+    .req-progress.muted { color: #999; background: #f0f0f0; }
+    .req-item-row { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e5e5e5; }
+    .req-item-name { font-size: 13px; font-weight: bold; color: #333; margin-bottom: 4px; }
+    .req-item-codes { display: flex; flex-wrap: wrap; gap: 6px; }
+    .code-chip { font-size: 11px; font-family: "SF Mono", "Consolas", monospace; padding: 3px 8px; border-radius: 8px; border: 1px solid #ddd; background: #fff; color: #555; }
+    .code-chip.done { background: #eafaf1; border-color: #2ecc71; color: #1e8449; font-weight: bold; }
+    .code-chip.muted { border-style: dashed; color: #999; font-family: inherit; }
 
     /* ===== スキャナー ===== */
     /* 🆕 閉じるボタンが下部に隠れないよう、余白+スクロール+ボタン位置を調整 */
@@ -454,7 +452,7 @@
     /* =========================================================
        設定
        ========================================================= */
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyUa7rbFHZNByJoKx7Cn8UZ-d3bXM6iT6eRGjDuQrsovBT8LATPWL4-3ZKaMMsgvcU/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxNEE_cTr3b_M3yyra5Qd3BON-FXkhPv7Qp22IGrkEEwQq7S8j7p6eWUdalxA-V_eeT/exec";
 
     const urlParams = new URLSearchParams(window.location.search);
     let activeLocation = urlParams.get('loc') || "";
@@ -692,16 +690,7 @@
     function closeRequestList() {
       document.getElementById('requestListModal').classList.remove('show');
     }
-    function statusBadge(s) {
-      switch (s) {
-        case '承認待ち':     return { cls: 'b-wait',   label: '承認待ち' };
-        case '承認':         return { cls: 'b-ready',  label: '承認' };
-        case 'CO30作成待ち': return { cls: 'b-ready',  label: 'CO30作成待ち' };
-        case '送信完了':     return { cls: 'b-done',   label: '送信完了' };
-        case '取消':         return { cls: 'b-cancel', label: '取消' };
-        default:             return { cls: 'b-other',  label: s || '不明' };
-      }
-    }
+    /* 🆕 部門・物品名・数量・物品ごとの番号・検品済かどうかだけを表示する */
     async function loadRequestList() {
       const body = document.getElementById('requestListBody');
       body.innerHTML = '⏳ 読み込み中...';
@@ -714,22 +703,38 @@
         }
         body.innerHTML = '';
         reqs.forEach(r => {
-          const badge = statusBadge(r.status);
-          let itemsTxt = (r.items || []).slice(0, 4).map(it => `${it.name}×${it.qty || 1}`).join(' / ');
-          if ((r.items || []).length > 4) itemsTxt += ` ほか${r.items.length - 4}件`;
-          const teamCls = r.team === '運送' ? 'transport' : r.team === 'レンタル' ? 'rental' : '';
+          let totalCodes = 0, doneCodes = 0;
+          (r.items || []).forEach(it => {
+            (it.codes || []).forEach(c => { totalCodes++; if (c.checked) doneCodes++; });
+          });
+          const progressHtml = totalCodes > 0
+            ? `<span class="req-progress">${doneCodes}/${totalCodes} 検品済</span>`
+            : `<span class="req-progress muted">CO30未作成</span>`;
+
+          const itemsHtml = (r.items || []).map(it => {
+            let codesHtml;
+            if (it.codes && it.codes.length > 0) {
+              codesHtml = it.codes.map(c =>
+                `<span class="code-chip ${c.checked ? 'done' : ''}">${escapeHtml(c.code)}${c.checked ? ' ✓' : ''}</span>`
+              ).join('');
+            } else {
+              codesHtml = `<span class="code-chip muted">(CO30未作成)</span>`;
+            }
+            return `<div class="req-item-row">
+                <div class="req-item-name">${escapeHtml(it.name)} × ${escapeHtml(it.qty)}</div>
+                <div class="req-item-codes">${codesHtml}</div>
+              </div>`;
+          }).join('');
+
           const div = document.createElement('div');
           div.className = 'req-card';
           div.innerHTML = `
             <div class="req-top">
               <span class="req-no ${r.reqNo ? '' : 'unassigned'}">${escapeHtml(r.reqNo || '未採番')}</span>
-              <span class="req-badge ${badge.cls}">${escapeHtml(badge.label)}</span>
+              <span class="req-dept">${escapeHtml(r.dept)}</span>
+              ${progressHtml}
             </div>
-            <div class="req-sub">${escapeHtml(r.dept)}|${escapeHtml(r.fromLocation || '-')} → ${escapeHtml(r.toLocation || '-')}
-              ${teamCls ? `<span class="req-team-tag ${teamCls}">${escapeHtml(r.team)}TM</span>` : ''}
-            </div>
-            <div class="req-sub">搬入希望: ${escapeHtml(r.arrival || '-')}</div>
-            <div class="req-items">${escapeHtml(itemsTxt || '(物品なし)')}</div>`;
+            ${itemsHtml || '<div class="req-item-row" style="color:#999;">(物品なし)</div>'}`;
           body.appendChild(div);
         });
       } catch (err) {

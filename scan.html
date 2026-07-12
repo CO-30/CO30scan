@@ -16,9 +16,17 @@
       -webkit-tap-highlight-color: transparent;
     }
 
+    /* ===== ライフサイクル色 ===== */
+    :root {
+      --c-untreated: #74798a;
+      --c-shipinsp:  #2c5f8a;
+      --c-shipped:   #e67e22;
+      --c-collinsp:  #8e44ad;
+      --c-returned:  #27ae60;
+    }
+
     /* ===== ヘッダー ===== */
     .header-panel {
-      background-color: #f39c12;
       color: #fff;
       padding: 12px 15px;
       position: sticky;
@@ -28,8 +36,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      transition: background-color 0.2s;
     }
-    .header-panel.mode-return { background-color: #8e44ad; }
     .header-left { display: flex; flex-direction: column; gap: 2px; }
     .header-title { font-size: 14px; font-weight: bold; }
     .header-team {
@@ -40,13 +48,9 @@
       display: inline-block;
       width: fit-content;
     }
-    .header-team.transport { background: #2ecc71; }
-    .header-team.rental    { background: #3498db; }
-    .header-team.both      { background: #9b59b6; }
     .header-counter { display: flex; align-items: center; gap: 8px; }
     .counter-badge {
       background: #fff;
-      color: #f39c12;
       font-size: 22px;
       font-weight: bold;
       padding: 4px 14px;
@@ -54,19 +58,18 @@
       min-width: 40px;
       text-align: center;
     }
-    .header-panel.mode-return .counter-badge { color: #8e44ad; }
 
-    /* ===== モード切り替えタブ ===== */
-    .mode-tabs {
-      display: flex;
+    /* ===== ライフサイクルモード選択(5モード) ===== */
+    .lifecycle-tabs {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
       background: #fff;
       border-bottom: 2px solid #eee;
     }
-    .mode-tab {
-      flex: 1;
-      padding: 12px;
+    .lifecycle-tab {
+      padding: 10px 2px;
       text-align: center;
-      font-size: 14px;
+      font-size: 11px;
       font-weight: bold;
       color: #aaa;
       border: none;
@@ -74,38 +77,36 @@
       border-bottom: 3px solid transparent;
       cursor: pointer;
       transition: all 0.15s;
+      line-height: 1.3;
     }
-    .mode-tab.active-inspect {
-      color: #f39c12;
-      border-bottom-color: #f39c12;
-    }
-    .mode-tab.active-return {
-      color: #8e44ad;
-      border-bottom-color: #8e44ad;
+    .lifecycle-tab.active { border-bottom-color: currentColor; }
+    .lifecycle-tab[data-state="未処理"]     { color: #b7bac2; }
+    .lifecycle-tab[data-state="未処理"].active     { color: var(--c-untreated); }
+    .lifecycle-tab[data-state="配送検品済"] { color: #b7bac2; }
+    .lifecycle-tab[data-state="配送検品済"].active { color: var(--c-shipinsp); }
+    .lifecycle-tab[data-state="配送済"]     { color: #b7bac2; }
+    .lifecycle-tab[data-state="配送済"].active     { color: var(--c-shipped); }
+    .lifecycle-tab[data-state="回収検品済"] { color: #b7bac2; }
+    .lifecycle-tab[data-state="回収検品済"].active { color: var(--c-collinsp); }
+    .lifecycle-tab[data-state="返却済"]     { color: #b7bac2; }
+    .lifecycle-tab[data-state="返却済"].active     { color: var(--c-returned); }
+
+    .mode-banner {
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: bold;
+      text-align: center;
+      color: #fff;
     }
 
     .location-bar {
-      background-color: #eeb95d;
       color: #fff;
       padding: 6px 12px;
       font-size: 13px;
       font-weight: bold;
       text-align: center;
+      opacity: 0.85;
     }
-    .location-bar.mode-return { background-color: #a569bd; }
-
-    /* ===== モードバナー ===== */
-    .mode-banner {
-      display: none;
-      background: #f5eef8;
-      border-bottom: 1px solid #d7bde2;
-      padding: 8px 14px;
-      font-size: 13px;
-      font-weight: bold;
-      color: #8e44ad;
-      text-align: center;
-    }
-    .mode-banner.show { display: block; }
 
     /* ===== リスト ===== */
     .item-list-container { padding: 12px; padding-bottom: 180px; }
@@ -130,40 +131,28 @@
       from { opacity: 0; transform: translateY(-8px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    .item-card.completed  { border-left-color: #2ecc71; background-color: #f0fff5; }
-    .item-card.returned   { border-left-color: #8e44ad; background-color: #f5eef8; }
-    .item-card.syncing    { opacity: 0.5; }
-    .item-card.latest     { border-left-color: #f39c12; box-shadow: 0 2px 8px rgba(243,156,18,0.3); }
+    .item-card.syncing { opacity: 0.5; }
+    .item-card.latest  { box-shadow: 0 2px 10px rgba(0,0,0,0.25); }
     .item-info { flex: 1; }
     .item-name { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
     .item-code { font-size: 11px; color: #7f8c8d; }
-    .item-team-tag {
+    .item-dept-tag {
       display: inline-block;
       font-size: 10px;
-      font-weight: bold;
-      padding: 1px 6px;
-      border-radius: 8px;
+      color: #888;
       margin-top: 4px;
-      color: #fff;
     }
-    .item-team-tag.transport { background: #2ecc71; }
-    .item-team-tag.rental    { background: #3498db; }
-    .item-status-text { font-size: 12px; font-weight: bold; margin-top: 4px; }
-    .status-wait    { color: #e67e22; }
-    .status-ok      { color: #2ecc71; }
-    .status-returned { color: #8e44ad; }
-    .qty-controls {
-      display: flex; align-items: center; gap: 6px;
-      background: #f0f3f4; padding: 5px 10px; border-radius: 24px;
+    .lifecycle-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; font-weight: bold; margin-top: 6px;
+      padding: 3px 10px; border-radius: 12px; color: #fff;
     }
-    .btn-qty {
-      background: #fff; border: 1px solid #bdc3c7;
-      width: 40px; height: 40px; border-radius: 50%;
-      font-size: 18px; font-weight: bold;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .btn-qty:disabled { opacity: 0.4; }
-    .qty-display { font-size: 16px; font-weight: bold; min-width: 48px; text-align: center; }
+    .lifecycle-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.8); }
+    .lb-untreated { background: var(--c-untreated); }
+    .lb-shipinsp  { background: var(--c-shipinsp); }
+    .lb-shipped   { background: var(--c-shipped); }
+    .lb-collinsp  { background: var(--c-collinsp); }
+    .lb-returned  { background: var(--c-returned); }
 
     /* ===== 下部固定スキャンボタン ===== */
     .scan-dock {
@@ -179,7 +168,6 @@
       align-items: center;
     }
     .btn-scan-bottom {
-      background: #f39c12;
       color: #fff;
       border: none;
       font-size: 18px;
@@ -188,16 +176,12 @@
       border-radius: 40px;
       width: 100%;
       max-width: 420px;
-      box-shadow: 0 4px 16px rgba(243,156,18,0.5);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
-      transition: background 0.2s, box-shadow 0.2s;
-    }
-    .btn-scan-bottom.mode-return {
-      background: #8e44ad;
-      box-shadow: 0 4px 16px rgba(142,68,173,0.5);
+      transition: background-color 0.2s;
     }
     .btn-scan-bottom:active { transform: scale(0.97); opacity: 0.9; }
     .btn-scan-bottom .icon { font-size: 24px; }
@@ -220,12 +204,11 @@
       display: none; text-align: center; max-width: 85%;
     }
     .toast.error  { background: rgba(192,57,43,0.95); }
-    .toast.return { background: rgba(142,68,173,0.95); }
     .loading-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(255,255,255,0.7); z-index: 2000;
       display: flex; justify-content: center; align-items: center;
-      font-weight: bold; font-size: 16px; color: #f39c12;
+      font-weight: bold; font-size: 16px; color: #333;
     }
     .hidden { display: none; }
 
@@ -246,11 +229,11 @@
       width: 100%; font-size: 16px; padding: 12px;
       border: 1px solid #ccc; border-radius: 10px; margin-bottom: 16px;
     }
-    .modal-input:focus { outline: 2px solid #f39c12; }
+    .modal-input:focus { outline: 2px solid #2c5f8a; }
     .modal-buttons { display: flex; gap: 10px; }
     .modal-btn { flex: 1; padding: 12px; border-radius: 10px; font-size: 15px; font-weight: bold; border: none; }
     .modal-btn-cancel  { background: #f0f3f4; color: #555; }
-    .modal-btn-confirm { background: #f39c12; color: #fff; }
+    .modal-btn-confirm { background: #2c5f8a; color: #fff; }
 
     /* TM選択 */
     .team-option {
@@ -264,7 +247,7 @@
     .team-option.both      { border-color: #9b59b6; }
     .team-option-sub { font-size: 12px; color: #888; font-weight: normal; margin-top: 4px; }
 
-    /* ===== 🆕 依頼一覧モーダル(部門・物品・数量・番号・検品状況のみのシンプル版) ===== */
+    /* ===== 依頼一覧モーダル ===== */
     .request-list-box { max-width: 440px; max-height: 84vh; display: flex; flex-direction: column; }
     .request-list { overflow-y: auto; flex: 1; margin-bottom: 14px; -webkit-overflow-scrolling: touch; }
     .req-card { border: 1px solid #eee; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: #fafbfc; }
@@ -282,7 +265,6 @@
     .code-chip.muted { border-style: dashed; color: #999; font-family: inherit; }
 
     /* ===== スキャナー ===== */
-    /* 🆕 閉じるボタンが下部に隠れないよう、余白+スクロール+ボタン位置を調整 */
     #scannerOverlay {
       z-index: 4000;
       background: rgba(0,0,0,0.92);
@@ -302,9 +284,8 @@
       pointer-events: none;
       transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .scanner-frame.flash        { border-color: #2ecc71; box-shadow: 0 0 0 2000px rgba(46,204,113,0.15); }
-    .scanner-frame.flash-return { border-color: #8e44ad; box-shadow: 0 0 0 2000px rgba(142,68,173,0.15); }
-    .scanner-frame.flash-error  { border-color: #e74c3c; box-shadow: 0 0 0 2000px rgba(231,76,60,0.15); }
+    .scanner-frame.flash       { border-color: #2ecc71; box-shadow: 0 0 0 2000px rgba(46,204,113,0.15); }
+    .scanner-frame.flash-error { border-color: #e74c3c; box-shadow: 0 0 0 2000px rgba(231,76,60,0.15); }
     .scanner-status {
       color: #fff; text-align: center; font-size: 13px; margin-top: 12px; min-height: 18px;
     }
@@ -315,10 +296,10 @@
       border-radius: 24px; max-width: 480px; width: 100%;
     }
     .scanner-mode-toggle label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-    .scanner-mode-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: #f39c12; }
+    .scanner-mode-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: #2c5f8a; }
     .scanner-close-btn {
       margin: 14px auto 0 auto;
-      margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);  /* 🆕 下部に隠れない余白 */
+      margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);
       display: block;
       width: 100%; max-width: 480px; padding: 16px;
       border-radius: 12px; font-size: 16px; font-weight: bold; border: none;
@@ -374,7 +355,7 @@
     <div class="modal-box">
       <div class="modal-title">🔢 コード手動入力</div>
       <div class="modal-message">物品の識別コードを入力してください</div>
-      <input type="text" id="manualCodeInput" class="modal-input" placeholder="例: 3-2-1A" autocomplete="off" autocapitalize="characters">
+      <input type="text" id="manualCodeInput" class="modal-input" placeholder="例: 案1A" autocomplete="off" autocapitalize="characters">
       <div class="modal-buttons">
         <button class="modal-btn modal-btn-cancel" onclick="closeInputModal()">キャンセル</button>
         <button class="modal-btn modal-btn-confirm" onclick="submitManualCode()">登録</button>
@@ -382,7 +363,7 @@
     </div>
   </div>
 
-  <!-- 🆕 依頼一覧モーダル -->
+  <!-- 依頼一覧モーダル -->
   <div id="requestListModal" class="modal-overlay">
     <div class="modal-box request-list-box">
       <div class="modal-title">📋 依頼一覧(ステータス付き)</div>
@@ -412,26 +393,21 @@
       <div id="teamBadge" class="header-team">タップしてチーム選択</div>
     </div>
     <div class="header-counter">
-      <span id="counterLabel">検品済</span>
+      <span id="counterLabel">該当件数</span>
       <div id="totalQty" class="counter-badge">0</div>
     </div>
   </div>
 
-  <!-- モード切り替えタブ -->
-  <div class="mode-tabs">
-    <button class="mode-tab active-inspect" id="tab-inspect" onclick="switchMode('inspect')">
-      📦 検品モード
-    </button>
-    <button class="mode-tab" id="tab-return" onclick="switchMode('return')">
-      🔄 返却モード
-    </button>
+  <!-- ライフサイクル5モード選択 -->
+  <div class="lifecycle-tabs" id="lifecycleTabs">
+    <button class="lifecycle-tab" data-state="未処理"     onclick="selectLifecycleMode('未処理')">未処理</button>
+    <button class="lifecycle-tab" data-state="配送検品済" onclick="selectLifecycleMode('配送検品済')">配送<br>検品済</button>
+    <button class="lifecycle-tab" data-state="配送済"     onclick="selectLifecycleMode('配送済')">配送済</button>
+    <button class="lifecycle-tab" data-state="回収検品済" onclick="selectLifecycleMode('回収検品済')">回収<br>検品済</button>
+    <button class="lifecycle-tab" data-state="返却済"     onclick="selectLifecycleMode('返却済')">返却済</button>
   </div>
 
-  <!-- 返却モードバナー -->
-  <div class="mode-banner" id="modeBanner">
-    🔄 返却モード: QRをスキャンするとライフサイクルが「返却済」に更新されます
-  </div>
-
+  <div class="mode-banner" id="modeBanner">スキャンすると選択中の状態に更新されます</div>
   <div id="locationBar" class="location-bar">拠点: 未選択</div>
 
   <div class="item-list-container" id="itemList"></div>
@@ -454,42 +430,51 @@
        ========================================================= */
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxNEE_cTr3b_M3yyra5Qd3BON-FXkhPv7Qp22IGrkEEwQq7S8j7p6eWUdalxA-V_eeT/exec";
 
+    // 🆕 5モードの定義(色・アイコン・スキャン後トースト文言)
+    const LIFECYCLE_MODES = {
+      "未処理":     { color: "#74798a", badgeCls: "lb-untreated", icon: "⬜", label: "未処理" },
+      "配送検品済": { color: "#2c5f8a", badgeCls: "lb-shipinsp",  icon: "📦", label: "配送検品済" },
+      "配送済":     { color: "#e67e22", badgeCls: "lb-shipped",   icon: "🚚", label: "配送済" },
+      "回収検品済": { color: "#8e44ad", badgeCls: "lb-collinsp",  icon: "🔄", label: "回収検品済" },
+      "返却済":     { color: "#27ae60", badgeCls: "lb-returned",  icon: "✅", label: "返却済" }
+    };
+    const MODE_ORDER = ["未処理", "配送検品済", "配送済", "回収検品済", "返却済"];
+
     const urlParams = new URLSearchParams(window.location.search);
     let activeLocation = urlParams.get('loc') || "";
     let activeTeam = "";
-    let currentMode = 'inspect'; // 'inspect' | 'return'
+    let currentLifecycleMode = '配送検品済'; // デフォルトモード
 
-    let displayItems = [];
-    let allItemsByCode = {};
-    let groupMap = {};
-    let groupOrder = [];
+    let displayItems = [];       // getInspectionData().display
     let latestCode = null;
-
     let lastScannedCode = null;
     let lastScannedAt = 0;
     const SCAN_COOLDOWN_MS = 1200;
     const syncingCodes = new Set();
 
     /* =========================================================
-       モード切り替え
+       ライフサイクルモード切り替え
        ========================================================= */
-    function switchMode(mode) {
-      currentMode = mode;
-      const isReturn = (mode === 'return');
+    function applyModeColors() {
+      const info = LIFECYCLE_MODES[currentLifecycleMode];
+      document.getElementById('headerPanel').style.backgroundColor = info.color;
+      document.getElementById('locationBar').style.backgroundColor = info.color;
+      document.getElementById('modeBanner').style.backgroundColor = info.color;
+      document.getElementById('btnScan').style.backgroundColor = info.color;
+      document.querySelectorAll('.counter-badge').forEach(function(el) { el.style.color = info.color; });
+    }
 
-      document.getElementById('tab-inspect').className = 'mode-tab' + (isReturn ? '' : ' active-inspect');
-      document.getElementById('tab-return').className  = 'mode-tab' + (isReturn ? ' active-return' : '');
-
-      document.getElementById('headerPanel').classList.toggle('mode-return', isReturn);
-      document.getElementById('locationBar').classList.toggle('mode-return', isReturn);
-      document.getElementById('modeBanner').classList.toggle('show', isReturn);
-
-      document.getElementById('btnScan').classList.toggle('mode-return', isReturn);
-      document.getElementById('scanBtnLabel').textContent = isReturn ? '返却スキャン' : 'カメラでスキャン';
-
-      document.getElementById('headerTitle').textContent = isReturn ? '🔄 CO-30 返却処理' : '📦 CO-30 現場検品';
-      document.getElementById('counterLabel').textContent = isReturn ? '返却済' : '検品済';
-
+    function selectLifecycleMode(mode) {
+      currentLifecycleMode = mode;
+      document.querySelectorAll('.lifecycle-tab').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-state') === mode);
+      });
+      const info = LIFECYCLE_MODES[mode];
+      document.getElementById('headerTitle').textContent = `${info.icon} CO-30 ${info.label}スキャン`;
+      document.getElementById('scanBtnLabel').textContent = `${info.label}としてスキャン`;
+      document.getElementById('modeBanner').textContent = `スキャンすると「${info.label}」に更新されます`;
+      document.getElementById('counterLabel').textContent = `${info.label}`;
+      applyModeColors();
       renderList();
     }
 
@@ -499,6 +484,8 @@
     window.onload = function() {
       document.getElementById("locationBar").innerText =
         activeLocation ? `拠点: ${activeLocation}` : `拠点: すべて`;
+
+      selectLifecycleMode(currentLifecycleMode);
 
       const savedTeam = localStorage.getItem('scanner_active_team');
       if (savedTeam) {
@@ -522,14 +509,9 @@
     }
     function updateTeamBadge() {
       const badge = document.getElementById('teamBadge');
-      badge.classList.remove('transport', 'rental', 'both');
-      if (activeTeam === '運送') {
-        badge.innerText = '🚛 運送TM'; badge.classList.add('transport');
-      } else if (activeTeam === 'レンタル') {
-        badge.innerText = '🏢 レンタルTM'; badge.classList.add('rental');
-      } else {
-        badge.innerText = '🌐 両方表示'; badge.classList.add('both');
-      }
+      if (activeTeam === '運送') badge.innerText = '🚛 運送TM';
+      else if (activeTeam === 'レンタル') badge.innerText = '🏢 レンタルTM';
+      else badge.innerText = '🌐 両方表示';
     }
 
     /* =========================================================
@@ -558,17 +540,6 @@
       try {
         const res = await gasGet('getInspectionData', { location: activeLocation, team: activeTeam });
         displayItems = (res && res.display) ? res.display : [];
-        const allItems = (res && res.all) ? res.all : [];
-        allItemsByCode = {};
-        allItems.forEach(item => {
-          allItemsByCode[item.code] = { name: item.name, team: item.team, lifecycle: item.lifecycle };
-        });
-        buildGroups();
-        groupOrder = Object.keys(groupMap).sort((a, b) => {
-          const la = Math.max(...groupMap[a].indices.map(i => displayItems[i].updatedAt || 0));
-          const lb = Math.max(...groupMap[b].indices.map(i => displayItems[i].updatedAt || 0));
-          return lb - la;
-        });
         renderList();
       } catch (err) {
         showMessageModal("データ取得エラー", err.message);
@@ -577,40 +548,13 @@
       }
     }
 
-    function buildGroups() {
-      groupMap = {};
-      displayItems.forEach((item, idx) => {
-        if (!groupMap[item.code]) {
-          groupMap[item.code] = { indices: [], name: item.name, team: item.team };
-        }
-        groupMap[item.code].indices.push(idx);
-      });
-    }
-
-    function getGroupTotals(code) {
-      let planTotal = 0, actualTotal = 0;
-      groupMap[code].indices.forEach(idx => {
-        planTotal  += displayItems[idx].plan;
-        actualTotal += displayItems[idx].actual;
-      });
-      return { planTotal, actualTotal };
-    }
-
-    function bringGroupToFront(code) {
-      groupOrder = groupOrder.filter(c => c !== code);
-      groupOrder.unshift(code);
-    }
-    function removeGroupFromOrder(code) {
-      groupOrder = groupOrder.filter(c => c !== code);
-    }
-
     /* =========================================================
-       リスト描画
+       リスト描画(コードごとに1枚。最近スキャンしたものを先頭に)
        ========================================================= */
     function renderList() {
       const listContainer = document.getElementById("itemList");
-      const totalActual = displayItems.reduce((sum, it) => sum + it.actual, 0);
-      document.getElementById("totalQty").innerText = totalActual;
+      const matchCount = displayItems.filter(it => it.lifecycle === currentLifecycleMode).length;
+      document.getElementById("totalQty").innerText = matchCount;
 
       listContainer.innerHTML = "";
 
@@ -619,69 +563,37 @@
         return;
       }
 
-      const visibleCodes = groupOrder.filter(code => {
-        const { actualTotal } = getGroupTotals(code);
-        return actualTotal > 0;
-      });
+      // 最終更新の新しい順に並べる
+      const sorted = displayItems.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-      if (visibleCodes.length === 0) {
-        const msg = currentMode === 'return'
-          ? '📷 QRコードをスキャンすると返却処理が記録されます。'
-          : '📷 QRコードをスキャンすると、ここに検品済みの商品が表示されます。';
-        listContainer.innerHTML = `<p class="empty-hint">${msg}</p>`;
-        return;
-      }
-
-      visibleCodes.forEach(code => {
-        const group = groupMap[code];
-        const { planTotal, actualTotal } = getGroupTotals(code);
-        const masterInfo = allItemsByCode[code] || {};
-        const lifecycle  = masterInfo.lifecycle || '';
-        const isReturned = lifecycle === '返却済';
-        const isDone     = actualTotal >= planTotal;
-        const isSyncing  = syncingCodes.has(code);
-        const isLatest   = code === latestCode;
-        const tagCls = group.team === '運送' ? 'transport' : group.team === 'レンタル' ? 'rental' : '';
+      sorted.forEach(item => {
+        const lifecycle = item.lifecycle || '未処理';
+        const info = LIFECYCLE_MODES[lifecycle] || LIFECYCLE_MODES['未処理'];
+        const isSyncing = syncingCodes.has(item.code);
+        const isLatest = item.code === latestCode;
 
         const card = document.createElement("div");
-        card.className = `item-card
-          ${isDone     ? 'completed' : ''}
-          ${isReturned ? 'returned'  : ''}
-          ${isSyncing  ? 'syncing'   : ''}
-          ${isLatest   ? 'latest'    : ''}`.replace(/\s+/g, ' ').trim();
-
-        let statusHtml = '';
-        if (isReturned) {
-          statusHtml = '<div class="item-status-text status-returned">✅ 返却済</div>';
-        } else if (isDone) {
-          statusHtml = '<div class="item-status-text status-ok">✓ 検品完了</div>';
-        } else {
-          statusHtml = `<div class="item-status-text status-wait">残り ${planTotal - actualTotal} 点</div>`;
-        }
+        card.className = `item-card ${isSyncing ? 'syncing' : ''} ${isLatest ? 'latest' : ''}`.trim();
+        card.style.borderLeftColor = info.color;
 
         card.innerHTML = `
           <div class="item-info">
-            <div class="item-name">${escapeHtml(group.name)}</div>
-            <div class="item-code">コード: ${escapeHtml(code)}</div>
-            ${activeTeam === '両方' && tagCls ? `<span class="item-team-tag ${tagCls}">${escapeHtml(group.team)}TM</span>` : ''}
-            ${statusHtml}
-          </div>
-          <div class="qty-controls">
-            <button class="btn-qty" ${isSyncing ? 'disabled' : ''} onclick="changeQtyGroup('${escapeJs(code)}', -1)">-</button>
-            <div class="qty-display">${actualTotal} / ${planTotal}</div>
-            <button class="btn-qty" ${isSyncing ? 'disabled' : ''} onclick="changeQtyGroup('${escapeJs(code)}', 1)">+</button>
+            <div class="item-name">${escapeHtml(item.name)}</div>
+            <div class="item-code">コード: ${escapeHtml(item.code)}</div>
+            ${item.dept ? `<div class="item-dept-tag">依頼部門: ${escapeHtml(item.dept)}${item.reqNo ? ' (No.' + escapeHtml(item.reqNo) + ')' : ''}</div>` : ''}
+            <div class="lifecycle-badge ${info.badgeCls}">${info.icon} ${info.label}</div>
           </div>`;
         listContainer.appendChild(card);
       });
     }
 
     function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
     function escapeJs(s) { return String(s).replace(/['\\]/g, '\\$&'); }
 
     /* =========================================================
-       🆕 依頼一覧(ステータス付き)
+       依頼一覧(ステータス付き)
        ========================================================= */
     function openRequestList() {
       document.getElementById('requestListModal').classList.add('show');
@@ -690,7 +602,6 @@
     function closeRequestList() {
       document.getElementById('requestListModal').classList.remove('show');
     }
-    /* 🆕 部門・物品名・数量・物品ごとの番号・検品済かどうかだけを表示する */
     async function loadRequestList() {
       const body = document.getElementById('requestListBody');
       body.innerHTML = '⏳ 読み込み中...';
@@ -743,62 +654,7 @@
     }
 
     /* =========================================================
-       検品数量変更
-       ========================================================= */
-    async function changeQtyGroup(code, amount) {
-      if (syncingCodes.has(code)) return;
-      const group = groupMap[code];
-      if (!group) return;
-
-      let targetIndex = null;
-      if (amount > 0) {
-        targetIndex = group.indices.find(idx => displayItems[idx].actual < displayItems[idx].plan);
-        if (targetIndex === undefined) { showToast(`⚠️ ${group.name} は既に必要数に達しています`); return; }
-      } else {
-        for (let i = group.indices.length - 1; i >= 0; i--) {
-          if (displayItems[group.indices[i]].actual > 0) { targetIndex = group.indices[i]; break; }
-        }
-        if (targetIndex === null) return;
-      }
-
-      const item = displayItems[targetIndex];
-      const nextQty = item.actual + amount;
-      if (nextQty < 0 || nextQty > item.plan) return;
-
-      const previousQty = item.actual;
-      item.actual = nextQty;
-      const { actualTotal: newActualTotal } = getGroupTotals(code);
-      if (newActualTotal > 0) { bringGroupToFront(code); latestCode = code; }
-      else { removeGroupFromOrder(code); latestCode = null; }
-
-      syncingCodes.add(code);
-      renderList();
-
-      try {
-        const res = await gasPost('updateInspectionQty', {
-          location: activeLocation, itemCode: item.code,
-          newQty: nextQty, rowId: item.rowId
-        });
-        syncingCodes.delete(code);
-        if (!res || !res.success) {
-          item.actual = previousQty;
-          const { actualTotal: rollbackTotal } = getGroupTotals(code);
-          if (rollbackTotal === 0) removeGroupFromOrder(code);
-          showToast("⚠️ 同期失敗: " + (res && res.error ? res.error : ""), true);
-        } else {
-          if (res.updatedAt) item.updatedAt = res.updatedAt;
-          if (res.rowId) item.rowId = res.rowId;
-        }
-      } catch (err) {
-        syncingCodes.delete(code);
-        item.actual = previousQty;
-        showToast("⚠️ 通信エラー: " + err.message, true);
-      }
-      renderList();
-    }
-
-    /* =========================================================
-       スキャン成功時の共通処理
+       スキャン成功時の共通処理 → 選択中のライフサイクルへ更新
        ========================================================= */
     function onScanSuccess(decodedText) {
       const cleanCode = (decodedText || "").trim();
@@ -809,75 +665,66 @@
       lastScannedCode = cleanCode;
       lastScannedAt = now;
 
-      const masterInfo = allItemsByCode[cleanCode];
+      const item = displayItems.find(it => it.code === cleanCode);
 
-      if (!masterInfo) {
+      if (!item) {
         showToast(`❌ 未登録コード: ${cleanCode}`, 'error');
         playErrorBeep();
         flashScannerFrame('error');
         return;
       }
 
-      if (activeTeam !== '両方' && masterInfo.team && masterInfo.team !== activeTeam) {
-        showToast(`❌ 担当外: ${masterInfo.team}TMの物品です(${masterInfo.name})`, 'error');
+      if (activeTeam !== '両方' && item.team && item.team !== activeTeam) {
+        showToast(`❌ 担当外: ${item.team}TMの物品です(${item.name})`, 'error');
         playErrorBeep();
         flashScannerFrame('error');
         return;
       }
 
-      if (currentMode === 'return') {
-        handleReturnScan(cleanCode, masterInfo);
-      } else {
-        handleInspectScan(cleanCode, masterInfo);
-      }
+      handleLifecycleScan(item);
     }
 
-    function handleInspectScan(code, masterInfo) {
-      const group = groupMap[code];
-      if (!group) { showToast(`❌ 表示データに見つかりません: ${code}`, 'error'); return; }
+    async function handleLifecycleScan(item) {
+      const info = LIFECYCLE_MODES[currentLifecycleMode];
+      const previousLifecycle = item.lifecycle;
 
-      const totalsBefore = getGroupTotals(code);
-      if (totalsBefore.actualTotal < totalsBefore.planTotal) {
-        changeQtyGroup(code, 1);
-        showToast(`🟢 ピッ! ${masterInfo.name}`);
-        playBeep();
+      if (previousLifecycle === currentLifecycleMode) {
+        showToast(`ℹ️ ${item.name} は既に「${info.label}」です`);
         flashScannerFrame('ok');
-        if (navigator.vibrate) navigator.vibrate(50);
-        if (getAutoCloseEnabled()) closeScanner();
-      } else {
-        showToast(`⚠️ ${masterInfo.name} は既に必要数に達しています`);
-        flashScannerFrame('ok');
-      }
-    }
-
-    async function handleReturnScan(code, masterInfo) {
-      if (masterInfo.lifecycle === '返却済') {
-        showToast(`⚠️ ${masterInfo.name} はすでに返却済みです`, 'error');
-        flashScannerFrame('error');
         return;
       }
 
-      showToast(`🔄 返却処理中: ${masterInfo.name}`, 'return');
-      playReturnBeep();
-      flashScannerFrame('return');
-      if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+      syncingCodes.add(item.code);
+      item.lifecycle = currentLifecycleMode;
+      item.updatedAt = Date.now();
+      latestCode = item.code;
+      renderList();
+
+      showToast(`${info.icon} ${item.name} を「${info.label}」に更新中...`);
+      playBeep();
+      flashScannerFrame('ok');
+      if (navigator.vibrate) navigator.vibrate(50);
       if (getAutoCloseEnabled()) closeScanner();
 
       try {
         const res = await gasPost('updateLifecycle', {
-          itemCode: code,
-          lifecycle: '返却済'
+          location: activeLocation,
+          itemCode: item.code,
+          lifecycle: currentLifecycleMode
         });
-        if (res && res.success) {
-          if (allItemsByCode[code]) allItemsByCode[code].lifecycle = '返却済';
-          showToast(`✅ 返却済に更新: ${masterInfo.name}`, 'return');
-          renderList();
+        syncingCodes.delete(item.code);
+        if (!res || !res.success) {
+          item.lifecycle = previousLifecycle;
+          showToast(`⚠️ 更新失敗: ${res && res.error ? res.error : ''}`, 'error');
         } else {
-          showToast(`❌ 更新失敗: ${res && res.error ? res.error : '不明なエラー'}`, 'error');
+          showToast(`✅ ${item.name} を「${info.label}」に更新しました`);
         }
       } catch (err) {
-        showToast(`❌ 通信エラー: ${err.message}`, 'error');
+        syncingCodes.delete(item.code);
+        item.lifecycle = previousLifecycle;
+        showToast(`⚠️ 通信エラー: ${err.message}`, 'error');
       }
+      renderList();
     }
 
     /* =========================================================
@@ -927,8 +774,8 @@
         video.srcObject = stream;
         video.onloadedmetadata = function() {
           video.play();
-          const modeLabel = currentMode === 'return' ? '返却するQRコードを枠に入れてください' : 'QRコードを枠の中に入れてください(自動で読み取ります)';
-          statusEl.innerText = modeLabel;
+          const info = LIFECYCLE_MODES[currentLifecycleMode];
+          statusEl.innerText = `「${info.label}」としてスキャンします。QRコードを枠に入れてください`;
           scanLoop();
         };
       }).catch(function(err) {
@@ -966,8 +813,8 @@
 
     function flashScannerFrame(type) {
       const frame = document.getElementById("scannerFrame");
-      frame.classList.remove('flash', 'flash-return', 'flash-error');
-      const cls = type === 'ok' ? 'flash' : type === 'return' ? 'flash-return' : 'flash-error';
+      frame.classList.remove('flash', 'flash-error');
+      const cls = type === 'ok' ? 'flash' : 'flash-error';
       frame.classList.add(cls);
       setTimeout(() => frame.classList.remove(cls), 250);
     }
@@ -1028,7 +875,6 @@
       } catch (e) {}
     }
     function playBeep()      { _playTone(880, 'sine',   0.15); }
-    function playReturnBeep(){ _playTone(660, 'sine',   0.25); _playTone(880, 'sine', 0.15); }
     function playErrorBeep() { _playTone(220, 'square', 0.35); }
 
     function showToast(msg, type) {

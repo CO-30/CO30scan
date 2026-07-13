@@ -582,15 +582,15 @@
         const isLatest = item.code === latestCode;
 
         const card = document.createElement("div");
-        card.className = `item-card ${isSyncing ? 'syncing' : ''} ${isLatest ? 'latest' : ''}`.trim();
-        card.style.borderLeftColor = info.color;
+        card.className = `item-card ${isSyncing ? 'syncing' : ''} ${isLatest ? 'latest' : ''} ${item.cancelled ? 'cancelled-card' : ''}`.trim();
+        card.style.borderLeftColor = item.cancelled ? '#ac3535' : info.color;
 
         card.innerHTML = `
           <div class="item-info">
             <div class="item-name">${escapeHtml(item.name)}</div>
             <div class="item-code">コード: ${escapeHtml(item.code)}</div>
             ${item.dept ? `<div class="item-dept-tag">依頼部門: ${escapeHtml(item.dept)}${item.reqNo ? ' (No.' + escapeHtml(item.reqNo) + ')' : ''}</div>` : ''}
-            <div class="lifecycle-badge ${info.badgeCls}">${info.icon} ${info.label}</div>
+            ${item.cancelled ? '<div class="lifecycle-badge" style="background:#ac3535;">🚫 取消済みの依頼</div>' : `<div class="lifecycle-badge ${info.badgeCls}">${info.icon} ${info.label}</div>`}
           </div>`;
         listContainer.appendChild(card);
       });
@@ -685,6 +685,14 @@
 
       if (activeTeam !== '両方' && item.team && item.team !== activeTeam) {
         showToast(`❌ 担当外: ${item.team}TMの物品です(${item.name})`, 'error');
+        playErrorBeep();
+        flashScannerFrame('error');
+        return;
+      }
+
+      // 🆕 取消済みの依頼に紐づく物品はスキャンをブロックする
+      if (item.cancelled) {
+        showToast(`🚫 この物品は取消済みの依頼のものです: ${item.name}`, 'error');
         playErrorBeep();
         flashScannerFrame('error');
         return;

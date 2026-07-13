@@ -563,8 +563,17 @@
         return;
       }
 
+      // 🆕 選択中のライフサイクルに該当するものだけを表示する(=既にこの状態でスキャン済みのもの)
+      const filtered = displayItems.filter(it => it.lifecycle === currentLifecycleMode);
+
+      if (filtered.length === 0) {
+        const info = LIFECYCLE_MODES[currentLifecycleMode];
+        listContainer.innerHTML = `<p class="empty-hint">まだ「${info.label}」としてスキャンされた物品はありません。<br>📷 カメラでスキャンすると、ここに表示されます。</p>`;
+        return;
+      }
+
       // 最終更新の新しい順に並べる
-      const sorted = displayItems.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const sorted = filtered.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
       sorted.forEach(item => {
         const lifecycle = item.lifecycle || '未処理';

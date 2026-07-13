@@ -24,18 +24,22 @@
 
     /* ===== 画面表示 ===== */
     @media screen {
+      .grid-xs { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
       .grid-s { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
       .grid-m { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
       .grid-l { display: grid; grid-template-columns: 1fr; gap: 12px; }
       .label-item { background: #fff; border: 1px dashed #bbb; border-radius: 6px; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+      .grid-xs .qr-img { width: 45px;  height: 45px;  display: block; }
       .grid-s .qr-img { width: 80px;  height: 80px;  display: block; }
       .grid-m .qr-img { width: 150px; height: 150px; display: block; }
       .grid-l .qr-img { width: 260px; height: 260px; display: block; }
+      .grid-xs .label-code { font-size: 8px; }
       .grid-m .label-code { font-size: 13px; }
       .grid-l .label-code { font-size: 18px; }
     }
 
     /* ===== 印刷 =====
+       極小: 10列×15行(18mm角 / QR 10mm) → ネジ等の極小物品用
        小: 4列×5行(47mm角 / QR 20mm) → ほうき等の小物用
        中: 2列×3行(94mm×88mm / QR 45mm)
        大: A4半分(190mm×130mm / QR 100mm) → クリアボックス等の大物用
@@ -47,6 +51,12 @@
       .preview-area { padding: 0; max-width: none; }
       .size-section { page-break-after: always; }
       .size-section:last-of-type { page-break-after: auto; }
+
+      .grid-xs { display: grid; grid-template-columns: repeat(10, 18mm); gap: 0; width: 180mm; margin: 0 auto; }
+      .grid-xs .label-item { width: 18mm; height: 18mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5mm; padding: 1mm; page-break-inside: avoid; overflow: hidden; }
+      .grid-xs .qr-img { width: 10mm !important; height: 10mm !important; }
+      .grid-xs .label-code { font-size: 4pt; }
+      .grid-xs .label-name { display: none; } /* 1cmは物品名を印字するスペースが無いため非表示 */
 
       .grid-s { display: grid; grid-template-columns: repeat(4, 47mm); gap: 0; width: 188mm; margin: 0 auto; }
       .grid-s .label-item { width: 47mm; height: 47mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2mm; padding: 3mm; page-break-inside: avoid; overflow: hidden; }
@@ -128,6 +138,7 @@
   <input type="text" id="f-search" placeholder="🔍 物品コード・物品名で検索">
   <select id="bulk-size" title="表示中のラベルすべてのサイズを一括変更">
     <option value="">一括サイズ変更...</option>
+    <option value="xs">すべて 極小(1cm)</option>
     <option value="s">すべて 小(2cm)</option>
     <option value="m">すべて 中(4.5cm)</option>
     <option value="l">すべて 大(A4半分)</option>
@@ -142,6 +153,10 @@
 
 <div class="status" id="status">⏳ データを取得中...</div>
 <div class="preview-area" id="preview-area" style="display:none;">
+  <div class="size-section" id="section-xs">
+    <div class="size-caption print-hide">■ 極小サイズ(1cm角 / A4に150枚)— ネジ等の極小物品向け(物品名は印字されません)</div>
+    <div class="label-grid grid-xs" id="grid-xs"></div>
+  </div>
   <div class="size-section" id="section-s">
     <div class="size-caption print-hide">■ 小サイズ(2cm角 / A4に20枚)— ほうき等の小物向け</div>
     <div class="label-grid grid-s" id="grid-s"></div>
@@ -313,7 +328,7 @@ function getFiltered() {
 /* =========================================================
    ② ラベル描画(サイズごとに3セクションへ振り分け)
    ========================================================= */
-var QR_PX = { s: 200, m: 400, l: 800 }; // サイズに応じた解像度でQR画像を取得
+var QR_PX = { xs: 100, s: 200, m: 400, l: 800 }; // サイズに応じた解像度でQR画像を取得
 
 function render() {
   var items = getFiltered();
@@ -322,8 +337,8 @@ function render() {
   document.getElementById('status').style.display = 'none';
   var area = document.getElementById('preview-area');
 
-  var grids = { s: document.getElementById('grid-s'), m: document.getElementById('grid-m'), l: document.getElementById('grid-l') };
-  grids.s.innerHTML = ''; grids.m.innerHTML = ''; grids.l.innerHTML = '';
+  var grids = { xs: document.getElementById('grid-xs'), s: document.getElementById('grid-s'), m: document.getElementById('grid-m'), l: document.getElementById('grid-l') };
+  grids.xs.innerHTML = ''; grids.s.innerHTML = ''; grids.m.innerHTML = ''; grids.l.innerHTML = '';
 
   if (items.length === 0) {
     area.style.display = 'none';
@@ -333,7 +348,7 @@ function render() {
   }
   area.style.display = 'block';
 
-  var counts = { s: 0, m: 0, l: 0 };
+  var counts = { xs: 0, s: 0, m: 0, l: 0 };
 
   items.forEach(function(item) {
     var size = sizeByCode[item.code] || 's';
@@ -395,7 +410,7 @@ function render() {
     // 🆕 ラベルごとのサイズ選択(印刷には出ない)
     var sel = document.createElement('select');
     sel.className = 'size-select print-hide';
-    [['s', '小 2cm'], ['m', '中 4.5cm'], ['l', '大 A4半分']].forEach(function(pair) {
+    [['xs', '極小 1cm'], ['s', '小 2cm'], ['m', '中 4.5cm'], ['l', '大 A4半分']].forEach(function(pair) {
       var opt = document.createElement('option');
       opt.value = pair[0]; opt.textContent = pair[1];
       if (pair[0] === size) opt.selected = true;
@@ -411,6 +426,7 @@ function render() {
   });
 
   // 空のセクションは非表示(印刷時の空白ページ防止)
+  document.getElementById('section-xs').style.display = counts.xs ? 'block' : 'none';
   document.getElementById('section-s').style.display = counts.s ? 'block' : 'none';
   document.getElementById('section-m').style.display = counts.m ? 'block' : 'none';
   document.getElementById('section-l').style.display = counts.l ? 'block' : 'none';

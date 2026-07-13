@@ -71,8 +71,11 @@
     .label-check-row { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #555; }
     .label-check-row input[type="checkbox"] { width: 14px; height: 14px; }
     .label-item.unchecked { opacity: 0.35; }
+    .label-item.cancelled-item { border: 2px solid #ac3535 !important; background: #fbe9e9; }
+    .cancelled-badge { font-size: 10px; font-weight: bold; color: #fff; background: #ac3535; padding: 2px 6px; border-radius: 6px; }
     @media print {
       .label-item.unchecked { display: none !important; }
+      .cancelled-badge { display: block !important; }
     }
     .bulk-check-buttons { display: flex; gap: 6px; }
     .btn-bulk-check { background: #eef2f5; color: #444; border: 1px solid #dde3e9; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
@@ -199,7 +202,16 @@ async function loadPrintFolderFiles() {
     u.searchParams.set('action', 'listPrintFolderFiles');
     var res = await fetch(u.toString());
     var json = await res.json();
-    printFolderFiles = (json && json.files) ? json.files : [];
+    // 🆕 success:falseや不明なアクション応答の場合は、空扱いにせずエラーとしてはっきり表示する
+    // (デプロイが更新されていないと action が認識されず、このパターンになる)
+    if (!json || json.success !== true) {
+      var msg = (json && json.error) ? json.error : '不明な応答';
+      body.innerHTML = '<div class="status">❌ 読み込みに失敗しました: ' + escapeHtmlDoc(msg) +
+        '<br><small>「不明なアクション」と出る場合は、Apps Scriptのフォーム用デプロイ(デプロイ1)がまだ最新のコードに更新されていない可能性があります。デプロイを管理→編集→新バージョンで更新してください。</small></div>';
+      printFolderFiles = [];
+      return;
+    }
+    printFolderFiles = json.files || [];
     renderDocList();
   } catch (err) {
     body.innerHTML = '<div class="status">❌ 取得エラー: ' + err.message + '</div>';
@@ -323,10 +335,13 @@ function render() {
   items.forEach(function(item) {
     var size = sizeByCode[item.code] || 's';
     counts[size]++;
-    if (checkedByCode[item.code] === undefined) checkedByCode[item.code] = true; // デフォルトはチェック済み
+    // 🆕 取消済みの物品はデフォルトで印刷チェックを外す(誤印刷防止)
+    if (checkedByCode[item.code] === undefined) checkedByCode[item.code] = !item.cancelled;
 
     var div = document.createElement('div');
-    div.className = 'label-item' + (checkedByCode[item.code] ? '' : ' unchecked');
+    div.className = 'label-item'
+      + (checkedByCode[item.code] ? '' : ' unchecked')
+      + (item.cancelled ? ' cancelled-item' : '');
     div.dataset.code = item.code;
 
     var px = QR_PX[size];
@@ -342,6 +357,13 @@ function render() {
       this.title = 'QR取得失敗: ' + item.code;
     };
     div.appendChild(img);
+
+    if (item.cancelled) {
+      var warn = document.createElement('div');
+      warn.className = 'cancelled-badge';
+      warn.textContent = '⚠️ 取消済みの依頼です';
+      div.appendChild(warn);
+    }
 
     var code = document.createElement('div');
     code.className = 'label-code';

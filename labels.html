@@ -66,15 +66,54 @@
     .label-code { font-family: "SF Mono", "Consolas", monospace; font-size: 10px; font-weight: bold; text-align: center; color: #222; word-break: break-all; line-height: 1.3; }
     .label-name { font-size: 10px; color: #666; text-align: center; word-break: break-all; }
     @media print { .label-name { font-size: 7pt; } .grid-m .label-name { font-size: 10pt; } .grid-l .label-name { font-size: 14pt; } }
+
+    /* 🆕 印刷対象チェックボックス */
+    .label-check-row { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #555; }
+    .label-check-row input[type="checkbox"] { width: 14px; height: 14px; }
+    .label-item.unchecked { opacity: 0.35; }
+    @media print {
+      .label-item.unchecked { display: none !important; }
+    }
+    .bulk-check-buttons { display: flex; gap: 6px; }
+    .btn-bulk-check { background: #eef2f5; color: #444; border: 1px solid #dde3e9; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+    .btn-bulk-check:hover { background: #dde3e9; }
+
+    /* 🆕 タブ切り替え(QRラベル / CO30・CO31印刷) */
+    .tab-bar { display: flex; background: #fff; border-bottom: 1px solid #dde3e9; }
+    .tab-btn { flex: 1; padding: 12px; text-align: center; font-size: 13px; font-weight: bold; color: #888; background: none; border: none; border-bottom: 3px solid transparent; cursor: pointer; }
+    .tab-btn.active { color: #2c5f8a; border-bottom-color: #2c5f8a; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* 🆕 印刷センター(CO30/CO31 PDF一覧) */
+    .doc-list { max-width: 720px; margin: 20px auto; padding: 0 16px; }
+    .doc-filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+    .doc-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      background: #fff; border: 1px solid #dde3e9; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px;
+    }
+    .doc-name { font-size: 13px; font-weight: bold; color: #333; word-break: break-all; }
+    .doc-meta { font-size: 11px; color: #888; margin-top: 2px; }
+    .doc-kind-badge { font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
+    .doc-kind-badge.k-co31 { background: #2c5f8a; }
+    .doc-kind-badge.k-co30 { background: #8e44ad; }
+    .doc-kind-badge.k-other { background: #888; }
+    .btn-doc-open { background: #2c5f8a; color: #fff; border: none; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: bold; cursor: pointer; white-space: nowrap; }
   </style>
 </head>
 <body>
 
 <div class="header print-hide">
-  <h1>🏷️ CO-30 QRラベル印刷</h1>
-  <div class="sub">物品に貼り付けるQRコードラベルを印刷します(ラベルごとにサイズを選択できます)</div>
+  <h1>🏷️ 印刷センター(QRラベル / CO30・CO31)</h1>
+  <div class="sub">物品に貼り付けるQRコードラベルと、CO30・CO31のPDFをまとめて印刷できます</div>
 </div>
 
+<div class="tab-bar print-hide">
+  <button class="tab-btn active" id="tab-btn-labels" onclick="switchTab('labels')">🏷️ QRラベル</button>
+  <button class="tab-btn" id="tab-btn-docs" onclick="switchTab('docs')">📄 CO30・CO31印刷</button>
+</div>
+
+<div class="tab-panel active" id="tab-panel-labels">
 <div class="filter-bar print-hide">
   <select id="f-location"><option value="">拠点: すべて</option></select>
   <select id="f-team">
@@ -89,8 +128,12 @@
     <option value="m">すべて 中(4.5cm)</option>
     <option value="l">すべて 大(A4半分)</option>
   </select>
+  <div class="bulk-check-buttons">
+    <button type="button" class="btn-bulk-check" onclick="setAllChecked(true)">☑ 全選択</button>
+    <button type="button" class="btn-bulk-check" onclick="setAllChecked(false)">☐ 全解除</button>
+  </div>
   <span class="filter-count" id="filter-count"></span>
-  <button class="btn-print" onclick="window.print()">🖨️ 印刷</button>
+  <button class="btn-print" onclick="window.print()">🖨️ チェックした分だけ印刷</button>
 </div>
 
 <div class="status" id="status">⏳ データを取得中...</div>
@@ -108,11 +151,99 @@
     <div class="label-grid grid-l" id="grid-l"></div>
   </div>
 </div>
+</div>
+
+<div class="tab-panel" id="tab-panel-docs">
+  <div class="doc-list">
+    <div class="doc-filter-bar">
+      <select id="doc-kind-filter">
+        <option value="">種類: すべて</option>
+        <option value="CO31">CO31のみ</option>
+        <option value="CO30">CO30のみ</option>
+      </select>
+      <input type="text" id="doc-search" placeholder="🔍 ファイル名で検索">
+      <button type="button" class="btn-bulk-check" onclick="loadPrintFolderFiles()">🔄 再読込</button>
+    </div>
+    <div id="doc-list-body">
+      <div class="status">⏳ このタブを開くと読み込みます</div>
+    </div>
+  </div>
+</div>
 
 <script>
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyUa7rbFHZNByJoKx7Cn8UZ-d3bXM6iT6eRGjDuQrsovBT8LATPWL4-3ZKaMMsgvcU/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxNEE_cTr3b_M3yyra5Qd3BON-FXkhPv7Qp22IGrkEEwQq7S8j7p6eWUdalxA-V_eeT/exec";
 var allItems = [];
-var sizeByCode = {}; // code → 's' | 'm' | 'l'(選択はフィルター変更後も維持)
+var sizeByCode = {};    // code → 's' | 'm' | 'l'(選択はフィルター変更後も維持)
+var checkedByCode = {}; // 🆕 code → true/false(印刷対象かどうか。デフォルトtrue)
+var printFolderFiles = []; // 🆕 CO30/CO31印刷センター用のファイル一覧キャッシュ
+
+/* =========================================================
+   🆕 タブ切り替え
+   ========================================================= */
+function switchTab(name) {
+  document.getElementById('tab-btn-labels').classList.toggle('active', name === 'labels');
+  document.getElementById('tab-btn-docs').classList.toggle('active', name === 'docs');
+  document.getElementById('tab-panel-labels').classList.toggle('active', name === 'labels');
+  document.getElementById('tab-panel-docs').classList.toggle('active', name === 'docs');
+  if (name === 'docs' && printFolderFiles.length === 0) loadPrintFolderFiles();
+}
+
+/* =========================================================
+   🆕 CO30/CO31印刷センター
+   ========================================================= */
+async function loadPrintFolderFiles() {
+  var body = document.getElementById('doc-list-body');
+  body.innerHTML = '<div class="status">⏳ 読み込み中...</div>';
+  try {
+    var u = new URL(GAS_API_URL);
+    u.searchParams.set('action', 'listPrintFolderFiles');
+    var res = await fetch(u.toString());
+    var json = await res.json();
+    printFolderFiles = (json && json.files) ? json.files : [];
+    renderDocList();
+  } catch (err) {
+    body.innerHTML = '<div class="status">❌ 取得エラー: ' + err.message + '</div>';
+  }
+}
+
+function renderDocList() {
+  var body = document.getElementById('doc-list-body');
+  var kindFilter = document.getElementById('doc-kind-filter').value;
+  var search = document.getElementById('doc-search').value.trim().toLowerCase();
+
+  var filtered = printFolderFiles.filter(function(f) {
+    if (kindFilter && f.kind !== kindFilter) return false;
+    if (search && f.name.toLowerCase().indexOf(search) < 0) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    body.innerHTML = '<div class="status">該当するファイルがありません</div>';
+    return;
+  }
+
+  body.innerHTML = filtered.map(function(f) {
+    var badgeCls = f.kind === 'CO31' ? 'k-co31' : f.kind === 'CO30' ? 'k-co30' : 'k-other';
+    var dateStr = f.createdAt ? new Date(f.createdAt).toLocaleString('ja-JP') : '';
+    return '<div class="doc-card">' +
+      '<div>' +
+        '<span class="doc-kind-badge ' + badgeCls + '">' + f.kind + '</span> ' +
+        '<div class="doc-name">' + escapeHtmlDoc(f.name) + '</div>' +
+        '<div class="doc-meta">' + dateStr + '</div>' +
+      '</div>' +
+      '<button class="btn-doc-open" onclick="window.open(\'' + f.url + '\', \'_blank\')">開いて印刷</button>' +
+    '</div>';
+  }).join('');
+}
+
+function escapeHtmlDoc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+document.getElementById('doc-kind-filter').addEventListener('change', renderDocList);
+document.getElementById('doc-search').addEventListener('input', renderDocList);
 
 /* =========================================================
    ① データ取得
@@ -171,7 +302,8 @@ var QR_PX = { s: 200, m: 400, l: 800 }; // サイズに応じた解像度でQR�
 
 function render() {
   var items = getFiltered();
-  document.getElementById('filter-count').textContent = items.length + ' 枚';
+  var checkedCount = items.filter(function(item) { return checkedByCode[item.code] !== false; }).length;
+  document.getElementById('filter-count').textContent = checkedCount + ' / ' + items.length + ' 枚(印刷対象/表示中)';
   document.getElementById('status').style.display = 'none';
   var area = document.getElementById('preview-area');
 
@@ -191,9 +323,11 @@ function render() {
   items.forEach(function(item) {
     var size = sizeByCode[item.code] || 's';
     counts[size]++;
+    if (checkedByCode[item.code] === undefined) checkedByCode[item.code] = true; // デフォルトはチェック済み
 
     var div = document.createElement('div');
-    div.className = 'label-item';
+    div.className = 'label-item' + (checkedByCode[item.code] ? '' : ' unchecked');
+    div.dataset.code = item.code;
 
     var px = QR_PX[size];
     var img = document.createElement('img');
@@ -218,6 +352,20 @@ function render() {
     name.className = 'label-name';
     name.textContent = item.name || '';
     div.appendChild(name);
+
+    // 🆕 印刷対象チェックボックス(印刷には出ない。チェックを外すとプレビューも薄くなり、印刷対象からも外れる)
+    var checkRow = document.createElement('label');
+    checkRow.className = 'label-check-row print-hide';
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = checkedByCode[item.code];
+    checkbox.onchange = function() {
+      checkedByCode[item.code] = checkbox.checked;
+      div.classList.toggle('unchecked', !checkbox.checked);
+    };
+    checkRow.appendChild(checkbox);
+    checkRow.appendChild(document.createTextNode('印刷する'));
+    div.appendChild(checkRow);
 
     // 🆕 ラベルごとのサイズ選択(印刷には出ない)
     var sel = document.createElement('select');
@@ -246,6 +394,12 @@ function render() {
 document.getElementById('f-location').addEventListener('change', render);
 document.getElementById('f-team').addEventListener('change', render);
 document.getElementById('f-search').addEventListener('input', render);
+
+/* 🆕 全選択/全解除(現在のフィルターに表示中のものだけ対象) */
+function setAllChecked(value) {
+  getFiltered().forEach(function(item) { checkedByCode[item.code] = value; });
+  render();
+}
 
 /* 🆕 一括サイズ変更(表示中のラベルに適用) */
 document.getElementById('bulk-size').addEventListener('change', function() {

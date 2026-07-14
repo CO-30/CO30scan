@@ -980,6 +980,16 @@
        ========================================================= */
     let scannerStream = null;
     let scannerRAF   = null;
+    let scanDetecting = false; // 🆕 検出処理の重複実行を防ぐフラグ
+
+    // 🆕 対応ブラウザ(Android Chrome等)ではOS/ブラウザ内蔵の高速バーコード検出APIを使う。
+    //    jsQRより高速・高精度なことが多く、特に小さいQRの認識に有利。非対応ブラウザではnullのままとなり、
+    //    scanLoop側で自動的にjsQRへフォールバックする。
+    let barcodeDetector = null;
+    if ('BarcodeDetector' in window) {
+      try { barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] }); }
+      catch (e) { barcodeDetector = null; }
+    }
 
     function openScanner() {
       if (!activeTeam) { openTeamSelectModal(); return; }
@@ -998,7 +1008,13 @@
       }
 
       navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        // 🆕 解像度を上げて小さいQR(1cm等)でもより多くの画素数が得られるようにする。
+        //    focusModeは対応端末のみ有効(非対応でも無視されるだけで害はない)。
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 }, height: { ideal: 1080 },
+          advanced: [{ focusMode: "continuous" }]
+        },
         audio: false
       }).then(function(stream) {
         scannerStream = stream;
@@ -1015,29 +1031,40 @@
       });
     }
 
-    function scanLoop() {
+    async function scanLoop() {
       if (!scannerStream) return;
-      const video  = document.getElementById("scannerVideo");
-      const canvas = document.getElementById("scannerCanvas");
+      const video = document.getElementById("scannerVideo");
 
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        const vw = video.videoWidth, vh = video.videoHeight;
-        if (vw && vh) {
-          // 🆕 画面のガイド枠周辺だけを切り出してスキャンする(以前は画面全体を3段階の解像度で
-          //     毎フレーム処理しており、これが反応の鈍さの主因だった)。
-          //     ガイド枠より少し広めに切り出すことで、多少ずれて構えても認識できるようにしている。
-          const cropX = Math.round(vw * 0.08), cropY = Math.round(vh * 0.10);
-          const cropW = Math.round(vw * 0.84), cropH = Math.round(vh * 0.80);
-          canvas.width = cropW; canvas.height = cropH;
-          const ctx = canvas.getContext("2d", { willReadFrequently: true });
-          ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-          let result = null;
-          try {
-            const imageData = ctx.getImageData(0, 0, cropW, cropH);
-            result = jsQR(imageData.data, cropW, cropH, { inversionAttempts: "attemptBoth" });
-          } catch (e) {}
-          if (result && result.data) onScanSuccess(result.data);
+      // 🆕 前回の検出がまだ終わっていなければスキップ(処理の重複を避けて安定させる)
+      if (!scanDetecting && video.readyState === video.HAVE_ENOUGH_DATA) {
+        scanDetecting = true;
+        try {
+          if (barcodeDetector) {
+            // ネイティブ検出(フレーム全体を高速に処理できるため、ここではガイド枠での切り出しはしない)
+            const codes = await barcodeDetector.detect(video);
+            if (codes && codes.length > 0 && codes[0].rawValue) {
+              onScanSuccess(codes[0].rawValue);
+            }
+          } else {
+            // jsQRフォールバック: ガイド枠周辺だけを切り出して処理を軽くする
+            const canvas = document.getElementById("scannerCanvas");
+            const vw = video.videoWidth, vh = video.videoHeight;
+            if (vw && vh) {
+              const cropX = Math.round(vw * 0.08), cropY = Math.round(vh * 0.10);
+              const cropW = Math.round(vw * 0.84), cropH = Math.round(vh * 0.80);
+              canvas.width = cropW; canvas.height = cropH;
+              const ctx = canvas.getContext("2d", { willReadFrequently: true });
+              ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+              const imageData = ctx.getImageData(0, 0, cropW, cropH);
+              const result = jsQR(imageData.data, cropW, cropH, { inversionAttempts: "attemptBoth" });
+              if (result && result.data) onScanSuccess(result.data);
+            }
+          }
+        } catch (e) {
+          // BarcodeDetectorが実行時エラーを出す端末もあるため、以後はjsQRに切り替える
+          if (barcodeDetector) barcodeDetector = null;
         }
+        scanDetecting = false;
       }
       scannerRAF = requestAnimationFrame(scanLoop);
     }
@@ -1053,6 +1080,7 @@
     function closeScanner() {
       if (scannerRAF) { cancelAnimationFrame(scannerRAF); scannerRAF = null; }
       if (scannerStream) { scannerStream.getTracks().forEach(t => t.stop()); scannerStream = null; }
+      scanDetecting = false; // 🆕 次回起動時に検出処理が固まったままにならないようにする
       document.getElementById("scannerVideo").srcObject = null;
       document.getElementById("scannerOverlay").classList.remove("show");
     }

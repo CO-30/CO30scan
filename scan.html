@@ -644,7 +644,9 @@
       const SWIPE_THRESHOLD = 90;
       let startX = 0, startY = 0, curX = 0, dragging = false, decided = false, isHorizontal = false;
 
-      const start = (clientX, clientY) => {
+      const start = (clientX, clientY, target) => {
+        // 🆕 備考入力欄からの操作は通常のテキスト入力として扱い、スワイプ/長押し判定はしない
+        if (target && target.closest && target.closest('.remarks-input')) return;
         clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => handleLongPressUndo(item), 600);
         startX = curX = clientX; startY = clientY;
@@ -683,11 +685,11 @@
         if (isHorizontal && dx > SWIPE_THRESHOLD) handleLongPressUndo(item);
       };
 
-      el.addEventListener('touchstart', (e) => start(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+      el.addEventListener('touchstart', (e) => start(e.touches[0].clientX, e.touches[0].clientY, e.target), { passive: true });
       el.addEventListener('touchmove', (e) => { if (move(e.touches[0].clientX, e.touches[0].clientY)) e.preventDefault(); }, { passive: false });
       el.addEventListener('touchend', end);
       el.addEventListener('touchcancel', end);
-      el.addEventListener('mousedown', (e) => start(e.clientX, e.clientY));
+      el.addEventListener('mousedown', (e) => start(e.clientX, e.clientY, e.target));
       el.addEventListener('mousemove', (e) => move(e.clientX, e.clientY));
       el.addEventListener('mouseup', end);
       el.addEventListener('mouseleave', end);

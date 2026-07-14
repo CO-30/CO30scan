@@ -256,6 +256,10 @@
     .request-list { overflow-y: auto; flex: 1; margin-bottom: 14px; -webkit-overflow-scrolling: touch; }
     .req-card { border: 1px solid #eee; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: #fafbfc; }
     .req-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .req-note {
+      font-size: 11.5px; color: #8a6d00; background: #fff8e1; border: 1px solid #f0c96b;
+      border-radius: 6px; padding: 5px 8px; margin-top: 6px; white-space: pre-wrap;
+    }
     .req-no { font-weight: bold; font-size: 14px; color: #333; }
     .req-no.unassigned { color: #aaa; font-weight: normal; }
     .req-dept { font-size: 13px; color: #555; }
@@ -287,6 +291,14 @@
       border: 1px solid #ddd; border-radius: 8px; color: #333; box-sizing: border-box;
     }
     .remarks-input:focus { outline: 2px solid #2c5f8a; border-color: #2c5f8a; }
+
+    /* 🆕 依頼元の特記事項バッジ(あるときだけ小さく表示、タップで全文) */
+    .note-badge {
+      display: block; width: 100%; margin-top: 8px; text-align: left;
+      background: #fff8e1; border: 1px solid #f0c96b; color: #8a6d00;
+      font-size: 11.5px; font-weight: bold; padding: 6px 10px; border-radius: 8px; cursor: pointer;
+    }
+    .note-badge:active { background: #fdecc0; }
 
     /* ===== スキャナー ===== */
     #scannerOverlay {
@@ -639,6 +651,7 @@
             <div class="item-code">コード: ${escapeHtml(item.code)}</div>
             ${item.dept ? `<div class="item-dept-tag">依頼部門: ${escapeHtml(item.dept)}${item.reqNo ? ' (No.' + escapeHtml(item.reqNo) + ')' : ''}</div>` : ''}
             ${item.cancelled ? '<div class="lifecycle-badge" style="background:#ac3535;">🚫 取消済みの依頼</div>' : `<div class="lifecycle-badge ${info.badgeCls}">${info.icon} ${info.label}</div>`}
+            ${item.requestNote ? `<button type="button" class="note-badge" data-code="${escapeHtml(item.code)}">📌 依頼元からの特記事項あり(タップで表示)</button>` : ''}
             <input type="text" class="remarks-input" list="rentalRemarkDatalist" placeholder="📝 備考(取得場所など・任意)" value="${escapeHtml(item.remarks || '')}" data-code="${escapeHtml(item.code)}">
           </div>`;
         attachCardGestures(card, item); // 🆕 常にアタッチ(戻せる履歴があるかは操作時に判定)
@@ -727,6 +740,14 @@
     document.getElementById('itemList').addEventListener('focusout', function(e) {
       if (!e.target.classList.contains('remarks-input')) return;
       saveRemarks(e.target.dataset.code, e.target.value);
+    });
+
+    // 🆕 依頼元の特記事項バッジをタップしたら全文をモーダルで表示する
+    document.getElementById('itemList').addEventListener('click', function(e) {
+      const btn = e.target.closest('.note-badge');
+      if (!btn) return;
+      const item = displayItems.find(it => it.code === btn.dataset.code);
+      if (item && item.requestNote) showMessageModal('📌 依頼元からの特記事項', item.requestNote);
     });
 
     /** 🆕 備考(どこから取ったか等)を保存する。メインリスト・依頼一覧のどちらからも呼ばれる共通処理。 */
@@ -852,6 +873,7 @@
             <span class="req-dept">${escapeHtml(r.dept)}</span>
             ${progressHtml}
           </div>
+          ${r.requestNote ? `<div class="req-note">📌 ${escapeHtml(r.requestNote)}</div>` : ''}
           ${itemsHtml || '<div class="req-item-row" style="color:#999;">(物品なし)</div>'}`;
         body.appendChild(div);
       });

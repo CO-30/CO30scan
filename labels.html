@@ -55,23 +55,23 @@
       .grid-xs { display: grid; grid-template-columns: repeat(10, 18mm); gap: 0; width: 180mm; margin: 0 auto; }
       .grid-xs .label-item { width: 18mm; height: 18mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5mm; padding: 1mm; page-break-inside: avoid; overflow: hidden; }
       .grid-xs .qr-img { width: 10mm !important; height: 10mm !important; }
-      .grid-xs .label-code { font-size: 4pt; }
+      .grid-xs .label-code { font-size: 6pt; width: 10mm; max-width: 10mm; }
       .grid-xs .label-name { display: none; } /* 1cmは物品名を印字するスペースが無いため非表示 */
 
       .grid-s { display: grid; grid-template-columns: repeat(4, 47mm); gap: 0; width: 188mm; margin: 0 auto; }
       .grid-s .label-item { width: 47mm; height: 47mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2mm; padding: 3mm; page-break-inside: avoid; overflow: hidden; }
       .grid-s .qr-img { width: 20mm !important; height: 20mm !important; }
-      .grid-s .label-code { font-size: 6pt; }
+      .grid-s .label-code { font-size: 11pt; width: 20mm; max-width: 20mm; }
 
       .grid-m { display: grid; grid-template-columns: repeat(2, 94mm); gap: 0; width: 188mm; margin: 0 auto; }
       .grid-m .label-item { width: 94mm; height: 88mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3mm; padding: 4mm; page-break-inside: avoid; overflow: hidden; }
       .grid-m .qr-img { width: 45mm !important; height: 45mm !important; }
-      .grid-m .label-code { font-size: 12pt; }
+      .grid-m .label-code { font-size: 20pt; width: 45mm; max-width: 45mm; }
 
       .grid-l { display: grid; grid-template-columns: 190mm; gap: 0; width: 190mm; margin: 0 auto; }
       .grid-l .label-item { width: 190mm; height: 130mm; border: 0.3pt dashed #aaa; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5mm; padding: 6mm; page-break-inside: avoid; overflow: hidden; }
       .grid-l .qr-img { width: 100mm !important; height: 100mm !important; }
-      .grid-l .label-code { font-size: 20pt; }
+      .grid-l .label-code { font-size: 34pt; width: 100mm; max-width: 100mm; }
     }
     .label-code { font-family: "SF Mono", "Consolas", monospace; font-size: 10px; font-weight: bold; text-align: center; color: #222; word-break: break-all; line-height: 1.3; }
     .label-name { font-size: 10px; color: #666; text-align: center; word-break: break-all; }
@@ -106,6 +106,7 @@
       background: #fff; border: 1px solid #dde3e9; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px;
     }
     .doc-card.doc-cancelled { border: 2px solid #ac3535; background: #fbe9e9; }
+    .doc-card.doc-unchecked { opacity: 0.4; }
     .doc-name { font-size: 13px; font-weight: bold; color: #333; word-break: break-all; }
     .doc-meta { font-size: 11px; color: #888; margin-top: 2px; }
     .doc-kind-badge { font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
@@ -182,6 +183,10 @@
       </select>
       <input type="text" id="doc-search" placeholder="🔍 ファイル名で検索">
       <button type="button" class="btn-bulk-check" onclick="loadPrintFolderFiles()">🔄 再読込</button>
+      <button type="button" class="btn-bulk-check" onclick="setAllDocsChecked(true)">☑ 全選択</button>
+      <button type="button" class="btn-bulk-check" onclick="setAllDocsChecked(false)">☐ 全解除</button>
+      <span class="filter-count" id="doc-filter-count"></span>
+      <button class="btn-print" onclick="openCheckedDocs()">📂 チェックした分だけ開く</button>
     </div>
     <div id="doc-list-body">
       <div class="status">⏳ このタブを開くと読み込みます</div>
@@ -195,6 +200,7 @@ var allItems = [];
 var sizeByCode = {};    // code → 's' | 'm' | 'l'(選択はフィルター変更後も維持)
 var checkedByCode = {}; // 🆕 code → true/false(印刷対象かどうか。デフォルトtrue)
 var printFolderFiles = []; // 🆕 CO30/CO31印刷センター用のファイル一覧キャッシュ
+var docCheckedByName = {}; // 🆕 ファイル名 → 選択状態(デフォルトtrue、取消済みはfalse)
 
 /* =========================================================
    🆕 タブ切り替え
@@ -245,17 +251,28 @@ function renderDocList() {
     return true;
   });
 
+  var checkedCount = filtered.filter(function(f) { return docCheckedByName[f.name] !== false; }).length;
+  document.getElementById('doc-filter-count').textContent = checkedCount + ' / ' + filtered.length + ' 件(選択中/表示中)';
+
   if (filtered.length === 0) {
     body.innerHTML = '<div class="status">該当するファイルがありません</div>';
     return;
   }
 
   body.innerHTML = filtered.map(function(f) {
+    // 🆕 未設定の場合、取消済みはデフォルト未選択・それ以外はデフォルト選択
+    if (docCheckedByName[f.name] === undefined) docCheckedByName[f.name] = !f.cancelled;
+    var isChecked = docCheckedByName[f.name];
+
     var badgeCls = f.kind === 'CO31' ? 'k-co31' : f.kind === 'CO30' ? 'k-co30' : 'k-other';
     var dateStr = f.createdAt ? new Date(f.createdAt).toLocaleString('ja-JP') : '';
     var cancelledBadge = f.cancelled ? '<span class="doc-kind-badge" style="background:#ac3535;">⚠️ 取消済み</span> ' : '';
-    return '<div class="doc-card' + (f.cancelled ? ' doc-cancelled' : '') + '">' +
-      '<div>' +
+    var safeName = escapeHtmlDoc(f.name).replace(/'/g, "\\'");
+    return '<div class="doc-card' + (f.cancelled ? ' doc-cancelled' : '') + (isChecked ? '' : ' doc-unchecked') + '">' +
+      '<label class="label-check-row" style="margin-right:4px;">' +
+        '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' onchange="toggleDocChecked(\'' + safeName + '\', this.checked)">' +
+      '</label>' +
+      '<div style="flex:1;">' +
         cancelledBadge +
         '<span class="doc-kind-badge ' + badgeCls + '">' + f.kind + '</span> ' +
         '<div class="doc-name">' + escapeHtmlDoc(f.name) + '</div>' +
@@ -264,6 +281,32 @@ function renderDocList() {
       '<button class="btn-doc-open" onclick="window.open(\'' + f.url + '\', \'_blank\')">開いて印刷</button>' +
     '</div>';
   }).join('');
+}
+
+function toggleDocChecked(name, checked) {
+  docCheckedByName[name] = checked;
+  renderDocList();
+}
+
+function setAllDocsChecked(value) {
+  var kindFilter = document.getElementById('doc-kind-filter').value;
+  var search = document.getElementById('doc-search').value.trim().toLowerCase();
+  printFolderFiles.filter(function(f) {
+    if (kindFilter && f.kind !== kindFilter) return false;
+    if (search && f.name.toLowerCase().indexOf(search) < 0) return false;
+    return true;
+  }).forEach(function(f) { docCheckedByName[f.name] = value; });
+  renderDocList();
+}
+
+/** 🆕 チェックが入っているPDFをまとめて新しいタブで開く(ポップアップブロック対策として少し間隔をあける) */
+function openCheckedDocs() {
+  var targets = printFolderFiles.filter(function(f) { return docCheckedByName[f.name] !== false; });
+  if (targets.length === 0) { alert('チェックされているファイルがありません。'); return; }
+  if (targets.length > 8 && !confirm(targets.length + '件のファイルを開きます。ブラウザのポップアップ許可が必要な場合があります。続けますか？')) return;
+  targets.forEach(function(f, i) {
+    setTimeout(function() { window.open(f.url, '_blank'); }, i * 350);
+  });
 }
 
 function escapeHtmlDoc(s) {

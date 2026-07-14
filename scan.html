@@ -259,10 +259,30 @@
     .req-progress.muted { color: #999; background: #f0f0f0; }
     .req-item-row { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e5e5e5; }
     .req-item-name { font-size: 13px; font-weight: bold; color: #333; margin-bottom: 4px; }
-    .req-item-codes { display: flex; flex-wrap: wrap; gap: 6px; }
     .code-chip { font-size: 11px; font-family: "SF Mono", "Consolas", monospace; padding: 3px 8px; border-radius: 8px; border: 1px solid #ddd; background: #fff; color: #555; }
-    .code-chip.done { background: #eafaf1; border-color: #2ecc71; color: #1e8449; font-weight: bold; }
     .code-chip.muted { border-style: dashed; color: #999; font-family: inherit; }
+
+    /* 🆕 依頼一覧: コードごとの行(タップで検品トグル・備考入力) */
+    .code-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+    .code-row-tap {
+      font-size: 12px; font-family: "SF Mono", "Consolas", monospace; font-weight: bold;
+      padding: 6px 10px; border-radius: 8px; border: 1px solid #ddd; background: #fff; color: #555;
+      display: flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0;
+    }
+    .code-row.code-row-done .code-row-tap { background: #eafaf1; border-color: #2ecc71; color: #1e8449; opacity: 0.7; }
+    .code-row-lc { font-size: 10px; font-weight: normal; color: #888; }
+    .code-row.code-row-done .code-row-lc { color: #1e8449; }
+    .code-row-remarks {
+      flex: 1; min-width: 120px; font-size: 12px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 8px; color: #333;
+    }
+    .code-row-remarks:focus { outline: 2px solid #2c5f8a; border-color: #2c5f8a; }
+
+    /* 🆕 メインリスト・依頼一覧共通: 備考入力欄 */
+    .remarks-input {
+      width: 100%; margin-top: 8px; font-size: 13px; padding: 8px 10px;
+      border: 1px solid #ddd; border-radius: 8px; color: #333; box-sizing: border-box;
+    }
+    .remarks-input:focus { outline: 2px solid #2c5f8a; border-color: #2c5f8a; }
 
     /* ===== スキャナー ===== */
     #scannerOverlay {
@@ -349,6 +369,9 @@
     <button class="scanner-close-btn" onclick="closeScanner()">✕ 閉じる</button>
     <canvas id="scannerCanvas" class="hidden"></canvas>
   </div>
+
+  <!-- 🆕 備考入力(取得場所など)の候補リスト。メインリスト・依頼一覧の両方から参照する -->
+  <datalist id="rentalRemarkDatalist"></datalist>
 
   <!-- 手動入力モーダル -->
   <div id="inputModal" class="modal-overlay">
@@ -447,6 +470,8 @@
 
     let displayItems = [];       // getInspectionData().display
     let latestCode = null;
+    let lastRequestListData = []; // 🆕 依頼一覧モーダルの直近取得データ(タップ操作の反映に使う)
+    let rentalRemarkOptions = []; // 🆕 Item_MasterのK列(レンタル備考候補)
     let lastScannedCode = null;
     let lastScannedAt = 0;
     const SCAN_COOLDOWN_MS = 1200;
@@ -486,6 +511,7 @@
         activeLocation ? `拠点: ${activeLocation}` : `拠点: すべて`;
 
       selectLifecycleMode(currentLifecycleMode);
+      loadRentalRemarkOptions(); // 🆕
 
       const savedTeam = localStorage.getItem('scanner_active_team');
       if (savedTeam) {
@@ -496,6 +522,16 @@
         openTeamSelectModal();
       }
     };
+
+    /** 🆕 Item_MasterのK列(レンタル備考候補)を取得し、備考入力のdatalistに反映する */
+    async function loadRentalRemarkOptions() {
+      try {
+        const res = await gasGet('getRentalRemarkOptions');
+        rentalRemarkOptions = (res && res.options) ? res.options : [];
+        const dl = document.getElementById('rentalRemarkDatalist');
+        if (dl) dl.innerHTML = rentalRemarkOptions.map(o => `<option value="${escapeHtml(o)}">`).join('');
+      } catch (e) {}
+    }
 
     function openTeamSelectModal() {
       document.getElementById('teamSelectModal').classList.add('show');
@@ -591,8 +627,93 @@
             <div class="item-code">コード: ${escapeHtml(item.code)}</div>
             ${item.dept ? `<div class="item-dept-tag">依頼部門: ${escapeHtml(item.dept)}${item.reqNo ? ' (No.' + escapeHtml(item.reqNo) + ')' : ''}</div>` : ''}
             ${item.cancelled ? '<div class="lifecycle-badge" style="background:#ac3535;">🚫 取消済みの依頼</div>' : `<div class="lifecycle-badge ${info.badgeCls}">${info.icon} ${info.label}</div>`}
+            <input type="text" class="remarks-input" list="rentalRemarkDatalist" placeholder="📝 備考(取得場所など・任意)" value="${escapeHtml(item.remarks || '')}" data-code="${escapeHtml(item.code)}">
           </div>`;
+        if (item.previousLifecycle) attachLongPress(card, item);
         listContainer.appendChild(card);
+      });
+    }
+
+    /* 🆕 カードを長押しすると、直前のライフサイクルに戻せるか確認する(誤スキャンの取消用) */
+    let longPressTimer = null;
+    function attachLongPress(el, item) {
+      const start = () => {
+        clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => handleLongPressUndo(item), 600);
+      };
+      const cancel = () => clearTimeout(longPressTimer);
+      el.addEventListener('touchstart', start, { passive: true });
+      el.addEventListener('touchend', cancel);
+      el.addEventListener('touchmove', cancel);
+      el.addEventListener('mousedown', start);
+      el.addEventListener('mouseup', cancel);
+      el.addEventListener('mouseleave', cancel);
+    }
+
+    async function handleLongPressUndo(item) {
+      if (!item.previousLifecycle) return;
+      if (navigator.vibrate) navigator.vibrate(30);
+      const fromInfo = LIFECYCLE_MODES[item.lifecycle] || LIFECYCLE_MODES['未処理'];
+      const toInfo = LIFECYCLE_MODES[item.previousLifecycle] || LIFECYCLE_MODES['未処理'];
+      const ok = confirm(`${item.name}(${item.code})\n「${fromInfo.label}」の読込を取り消して、\n「${toInfo.label}」に戻しますか？`);
+      if (!ok) return;
+      const revertTo = item.previousLifecycle;
+      item.previousLifecycle = null;
+      const success = await setCodeLifecycle(item.code, revertTo);
+      if (success) showToast(`↩️ ${item.name} を「${toInfo.label}」に戻しました`);
+      renderList();
+    }
+
+    // 🆕 リスト側の備考入力(フォーカスが外れたタイミングで保存。focusoutはbubbleするので委譲で受ける)
+    document.getElementById('itemList').addEventListener('focusout', function(e) {
+      if (!e.target.classList.contains('remarks-input')) return;
+      saveRemarks(e.target.dataset.code, e.target.value);
+    });
+
+    /** 🆕 備考(どこから取ったか等)を保存する。メインリスト・依頼一覧のどちらからも呼ばれる共通処理。 */
+    async function saveRemarks(code, value) {
+      const dispItem = displayItems.find(it => it.code === code);
+      if (dispItem) dispItem.remarks = value;
+      updateRequestListCache_(code, { remarks: value });
+      try {
+        const res = await gasPost('updateRemarks', { location: activeLocation, itemCode: code, remarks: value });
+        if (!res || !res.success) showToast('⚠️ 備考の保存に失敗しました: ' + (res && res.error ? res.error : ''), 'error');
+      } catch (err) {
+        showToast('⚠️ 通信エラー: ' + err.message, 'error');
+      }
+    }
+
+    /**
+     * 🆕 コードのライフサイクルをAPI経由で更新し、メインリスト(displayItems)と
+     * 依頼一覧のキャッシュ(lastRequestListData)の両方に反映する共通処理。
+     */
+    async function setCodeLifecycle(code, newLifecycle) {
+      try {
+        const res = await gasPost('updateLifecycle', { location: activeLocation, itemCode: code, lifecycle: newLifecycle });
+        if (!res || !res.success) {
+          showToast('⚠️ 更新失敗: ' + (res && res.error ? res.error : ''), 'error');
+          return false;
+        }
+        const dispItem = displayItems.find(it => it.code === code);
+        if (dispItem) {
+          dispItem.previousLifecycle = dispItem.lifecycle;
+          dispItem.lifecycle = newLifecycle;
+          dispItem.updatedAt = Date.now();
+        }
+        updateRequestListCache_(code, { lifecycle: newLifecycle });
+        return true;
+      } catch (err) {
+        showToast('⚠️ 通信エラー: ' + err.message, 'error');
+        return false;
+      }
+    }
+
+    /** lastRequestListData内の該当コードにpatchをマージする(依頼一覧モーダルの表示を最新に保つため) */
+    function updateRequestListCache_(code, patch) {
+      (lastRequestListData || []).forEach(req => {
+        (req.items || []).forEach(it => {
+          (it.codes || []).forEach(c => { if (c.code === code) Object.assign(c, patch); });
+        });
       });
     }
 
@@ -616,51 +737,99 @@
       body.innerHTML = '⏳ 読み込み中...';
       try {
         const res = await gasGet('listRequests');
-        const reqs = (res && res.requests) ? res.requests : [];
-        if (!reqs.length) {
-          body.innerHTML = '<p class="empty-hint">依頼データがありません</p>';
-          return;
-        }
-        body.innerHTML = '';
-        reqs.forEach(r => {
-          let totalCodes = 0, doneCodes = 0;
-          (r.items || []).forEach(it => {
-            (it.codes || []).forEach(c => { totalCodes++; if (c.checked) doneCodes++; });
-          });
-          const progressHtml = totalCodes > 0
-            ? `<span class="req-progress">${doneCodes}/${totalCodes} 検品済</span>`
-            : `<span class="req-progress muted">CO30未作成</span>`;
-
-          const itemsHtml = (r.items || []).map(it => {
-            let codesHtml;
-            if (it.codes && it.codes.length > 0) {
-              codesHtml = it.codes.map(c =>
-                `<span class="code-chip ${c.checked ? 'done' : ''}">${escapeHtml(c.code)}${c.checked ? ' ✓' : ''}</span>`
-              ).join('');
-            } else {
-              codesHtml = `<span class="code-chip muted">(CO30未作成)</span>`;
-            }
-            return `<div class="req-item-row">
-                <div class="req-item-name">${escapeHtml(it.name)} × ${escapeHtml(it.qty)}</div>
-                <div class="req-item-codes">${codesHtml}</div>
-              </div>`;
-          }).join('');
-
-          const div = document.createElement('div');
-          div.className = 'req-card';
-          div.innerHTML = `
-            <div class="req-top">
-              <span class="req-no ${r.reqNo ? '' : 'unassigned'}">${escapeHtml(r.reqNo || '未採番')}</span>
-              <span class="req-dept">${escapeHtml(r.dept)}</span>
-              ${progressHtml}
-            </div>
-            ${itemsHtml || '<div class="req-item-row" style="color:#999;">(物品なし)</div>'}`;
-          body.appendChild(div);
-        });
+        lastRequestListData = (res && res.requests) ? res.requests : [];
+        renderRequestListBody();
       } catch (err) {
         body.innerHTML = '❌ 取得エラー: ' + escapeHtml(err.message);
       }
     }
+
+    function renderRequestListBody() {
+      const body = document.getElementById('requestListBody');
+      const reqs = lastRequestListData || [];
+      if (!reqs.length) {
+        body.innerHTML = '<p class="empty-hint">依頼データがありません</p>';
+        return;
+      }
+      body.innerHTML = '';
+      reqs.forEach(r => {
+        let totalCodes = 0, doneCodes = 0;
+        (r.items || []).forEach(it => {
+          (it.codes || []).forEach(c => { totalCodes++; if (c.lifecycle === currentLifecycleMode) doneCodes++; });
+        });
+        const modeLabel = LIFECYCLE_MODES[currentLifecycleMode].label;
+        const progressHtml = totalCodes > 0
+          ? `<span class="req-progress">${doneCodes}/${totalCodes} 「${modeLabel}」</span>`
+          : `<span class="req-progress muted">CO30未作成</span>`;
+
+        const itemsHtml = (r.items || []).map(it => {
+          let rowsHtml;
+          if (it.codes && it.codes.length > 0) {
+            rowsHtml = it.codes.map(c => {
+              const done = c.lifecycle === currentLifecycleMode;
+              const lcInfo = LIFECYCLE_MODES[c.lifecycle] || LIFECYCLE_MODES['未処理'];
+              return `<div class="code-row ${done ? 'code-row-done' : ''}">
+                  <button type="button" class="code-row-tap" data-code="${escapeHtml(c.code)}" title="タップで「${modeLabel}」に更新/解除">
+                    ${done ? '✅' : '⬜'} ${escapeHtml(c.code)}
+                    <span class="code-row-lc">${lcInfo.icon} ${lcInfo.label}</span>
+                  </button>
+                  <input type="text" class="code-row-remarks" list="rentalRemarkDatalist" placeholder="📝 備考(取得場所など)" value="${escapeHtml(c.remarks || '')}" data-code="${escapeHtml(c.code)}">
+                </div>`;
+            }).join('');
+          } else {
+            rowsHtml = `<div class="code-row"><span class="code-chip muted">(CO30未作成)</span></div>`;
+          }
+          return `<div class="req-item-row">
+              <div class="req-item-name">${escapeHtml(it.name)} × ${escapeHtml(it.qty)}</div>
+              ${rowsHtml}
+            </div>`;
+        }).join('');
+
+        const div = document.createElement('div');
+        div.className = 'req-card';
+        div.innerHTML = `
+          <div class="req-top">
+            <span class="req-no ${r.reqNo ? '' : 'unassigned'}">${escapeHtml(r.reqNo || '未採番')}</span>
+            <span class="req-dept">${escapeHtml(r.dept)}</span>
+            ${progressHtml}
+          </div>
+          ${itemsHtml || '<div class="req-item-row" style="color:#999;">(物品なし)</div>'}`;
+        body.appendChild(div);
+      });
+    }
+
+    // 🆕 依頼一覧: コードをタップ → 未検品なら選択中モードに更新、既に選択中モードならタップでもう一度→直前の状態に戻す
+    const reqListPrevLifecycle = {};
+    document.getElementById('requestListBody').addEventListener('click', async function(e) {
+      const btn = e.target.closest('.code-row-tap');
+      if (!btn) return;
+      const code = btn.dataset.code;
+      let currentLc = '未処理';
+      (lastRequestListData || []).forEach(req => {
+        (req.items || []).forEach(it => {
+          (it.codes || []).forEach(c => { if (c.code === code) currentLc = c.lifecycle; });
+        });
+      });
+      btn.disabled = true;
+      let ok;
+      if (currentLc === currentLifecycleMode) {
+        const prev = reqListPrevLifecycle[code] || '未処理';
+        ok = await setCodeLifecycle(code, prev);
+        if (ok) showToast(`↩️ ${code} を元に戻しました`);
+      } else {
+        reqListPrevLifecycle[code] = currentLc;
+        ok = await setCodeLifecycle(code, currentLifecycleMode);
+        if (ok) showToast(`✅ ${code} を更新しました`);
+      }
+      renderRequestListBody();
+      renderList();
+    });
+
+    // 🆕 依頼一覧の備考入力(フォーカスが外れたら保存)
+    document.getElementById('requestListBody').addEventListener('focusout', function(e) {
+      if (!e.target.classList.contains('code-row-remarks')) return;
+      saveRemarks(e.target.dataset.code, e.target.value);
+    });
 
     /* =========================================================
        スキャン成功時の共通処理 → 選択中のライフサイクルへ更新
@@ -734,6 +903,8 @@
           item.lifecycle = previousLifecycle;
           showToast(`⚠️ 更新失敗: ${res && res.error ? res.error : ''}`, 'error');
         } else {
+          item.previousLifecycle = previousLifecycle; // 🆕 長押しで戻せるように直前の状態を記録
+          updateRequestListCache_(item.code, { lifecycle: currentLifecycleMode });
           showToast(`✅ ${item.name} を「${info.label}」に更新しました`);
         }
       } catch (err) {

@@ -467,6 +467,14 @@
     };
     const MODE_ORDER = ["未処理", "配送検品済", "配送済", "回収検品済", "返却済"];
 
+    /** 🆕 セッションの記憶に頼らず、決まった順序(MODE_ORDER)から「1つ前の段階」を返す。
+        既に最初の段階(未処理)ならnull(それ以上戻れない)。 */
+    function getPreviousStage_(lifecycle) {
+      const idx = MODE_ORDER.indexOf(lifecycle);
+      if (idx <= 0) return null;
+      return MODE_ORDER[idx - 1];
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     let activeLocation = urlParams.get('loc') || "";
     let activeTeam = "";
@@ -647,11 +655,12 @@
       let pressTimer = null;
 
       function triggerUndo() {
-        if (!item.previousLifecycle) {
-          showToast('この物品はこの端末でまだ更新していないため、スワイプで戻すことはできません(「📋 依頼一覧」からは戻せます)', 'error');
+        const target = item.previousLifecycle || getPreviousStage_(item.lifecycle);
+        if (!target) {
+          showToast('これより前の状態がありません', 'error');
           return;
         }
-        handleLongPressUndo(item);
+        handleLongPressUndo(item, target);
       }
 
       const onDown = (x, y, target) => {
@@ -700,14 +709,14 @@
       el.addEventListener('mouseleave', onUp);
     }
 
-    async function handleLongPressUndo(item) {
-      if (!item.previousLifecycle) return;
+    async function handleLongPressUndo(item, revertTo) {
+      revertTo = revertTo || item.previousLifecycle || getPreviousStage_(item.lifecycle);
+      if (!revertTo) return;
       if (navigator.vibrate) navigator.vibrate(30);
       const fromInfo = LIFECYCLE_MODES[item.lifecycle] || LIFECYCLE_MODES['未処理'];
-      const toInfo = LIFECYCLE_MODES[item.previousLifecycle] || LIFECYCLE_MODES['未処理'];
+      const toInfo = LIFECYCLE_MODES[revertTo] || LIFECYCLE_MODES['未処理'];
       const ok = confirm(`${item.name}(${item.code})\n「${fromInfo.label}」の読込を取り消して、\n「${toInfo.label}」に戻しますか？`);
       if (!ok) return;
-      const revertTo = item.previousLifecycle;
       item.previousLifecycle = null;
       const success = await setCodeLifecycle(item.code, revertTo);
       if (success) showToast(`↩️ ${item.name} を「${toInfo.label}」に戻しました`);
@@ -863,7 +872,8 @@
       btn.disabled = true;
       let ok;
       if (currentLc === currentLifecycleMode) {
-        const prev = reqListPrevLifecycle[code] || '未処理';
+        const prev = reqListPrevLifecycle[code] || getPreviousStage_(currentLc);
+        if (!prev) { btn.disabled = false; showToast('これより前の状態がありません', 'error'); return; }
         ok = await setCodeLifecycle(code, prev);
         if (ok) showToast(`↩️ ${code} を元に戻しました`);
       } else {

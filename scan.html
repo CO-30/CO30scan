@@ -126,7 +126,11 @@
       border-left: 6px solid #ccc;
       transition: opacity 0.15s;
       animation: slideIn 0.25s ease;
+      position: relative;
+      touch-action: pan-y; /* 🆕 横方向は自前でスワイプ判定するため、ブラウザの縦スクロールと競合しにくくする */
+      will-change: transform;
     }
+    .item-card.swipe-armed { background: #eafaf1; box-shadow: 0 2px 5px rgba(46,204,113,0.3); border-left-color: #2ecc71; }
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(-8px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -637,17 +641,56 @@
     /* 🆕 カードを長押しすると、直前のライフサイクルに戻せるか確認する(誤スキャンの取消用) */
     let longPressTimer = null;
     function attachLongPress(el, item) {
-      const start = () => {
+      const SWIPE_THRESHOLD = 90;
+      let startX = 0, startY = 0, curX = 0, dragging = false, decided = false, isHorizontal = false;
+
+      const start = (clientX, clientY) => {
         clearTimeout(longPressTimer);
         longPressTimer = setTimeout(() => handleLongPressUndo(item), 600);
+        startX = curX = clientX; startY = clientY;
+        dragging = true; decided = false; isHorizontal = false;
+        el.style.transition = 'none';
       };
-      const cancel = () => clearTimeout(longPressTimer);
-      el.addEventListener('touchstart', start, { passive: true });
-      el.addEventListener('touchend', cancel);
-      el.addEventListener('touchmove', cancel);
-      el.addEventListener('mousedown', start);
-      el.addEventListener('mouseup', cancel);
-      el.addEventListener('mouseleave', cancel);
+      const cancelPress = () => clearTimeout(longPressTimer);
+      const move = (clientX, clientY) => {
+        if (!dragging) return;
+        curX = clientX;
+        const dx = clientX - startX, dy = clientY - startY;
+        if (!decided && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+          decided = true;
+          isHorizontal = Math.abs(dx) > Math.abs(dy) * 1.3; // 横方向優勢な動きだけスワイプ扱いにする
+        }
+        if (isHorizontal) {
+          cancelPress(); // スワイプ中は長押し判定をキャンセル
+          if (dx > 0) {
+            const clamped = Math.min(dx, 130);
+            el.style.transform = `translateX(${clamped}px)`;
+            el.classList.toggle('swipe-armed', clamped > SWIPE_THRESHOLD);
+            return true; // 横スワイプ確定(呼び出し側でpreventDefaultするための合図)
+          }
+        }
+        return false;
+      };
+      const end = () => {
+        if (!dragging) return;
+        dragging = false;
+        cancelPress();
+        el.style.transition = 'transform 0.2s ease';
+        const dx = curX - startX;
+        el.style.transform = 'translateX(0)';
+        el.classList.remove('swipe-armed');
+        // 🆕 右に十分スワイプしたら、長押しと同じ「一つ前のライフサイクルに戻す」処理を呼ぶ
+        if (isHorizontal && dx > SWIPE_THRESHOLD) handleLongPressUndo(item);
+      };
+
+      el.addEventListener('touchstart', (e) => start(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+      el.addEventListener('touchmove', (e) => { if (move(e.touches[0].clientX, e.touches[0].clientY)) e.preventDefault(); }, { passive: false });
+      el.addEventListener('touchend', end);
+      el.addEventListener('touchcancel', end);
+      el.addEventListener('mousedown', (e) => start(e.clientX, e.clientY));
+      el.addEventListener('mousemove', (e) => move(e.clientX, e.clientY));
+      el.addEventListener('mouseup', end);
+      el.addEventListener('mouseleave', end);
     }
 
     async function handleLongPressUndo(item) {
@@ -980,19 +1023,19 @@
       if (video.readyState === video.HAVE_ENOUGH_DATA) {
         const vw = video.videoWidth, vh = video.videoHeight;
         if (vw && vh) {
+          // 🆕 画面のガイド枠周辺だけを切り出してスキャンする(以前は画面全体を3段階の解像度で
+          //     毎フレーム処理しており、これが反応の鈍さの主因だった)。
+          //     ガイド枠より少し広めに切り出すことで、多少ずれて構えても認識できるようにしている。
+          const cropX = Math.round(vw * 0.08), cropY = Math.round(vh * 0.10);
+          const cropW = Math.round(vw * 0.84), cropH = Math.round(vh * 0.80);
+          canvas.width = cropW; canvas.height = cropH;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
           let result = null;
-          for (const targetW of [vw, 800, 480]) {
-            const scale = Math.min(1, targetW / vw);
-            const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
-            canvas.width = cw; canvas.height = ch;
-            const ctx = canvas.getContext("2d", { willReadFrequently: true });
-            ctx.drawImage(video, 0, 0, cw, ch);
-            try {
-              const imageData = ctx.getImageData(0, 0, cw, ch);
-              result = jsQR(imageData.data, cw, ch, { inversionAttempts: "attemptBoth" });
-              if (result && result.data) break;
-            } catch (e) {}
-          }
+          try {
+            const imageData = ctx.getImageData(0, 0, cropW, cropH);
+            result = jsQR(imageData.data, cropW, cropH, { inversionAttempts: "attemptBoth" });
+          } catch (e) {}
           if (result && result.data) onScanSuccess(result.data);
         }
       }

@@ -526,6 +526,21 @@
       return MODE_ORDER[idx - 1];
     }
 
+    /**
+     * 🆕 拠点別・部門別/備品別ロット表示(階層タブ)の「フェーズ」。
+     * ship  : 親=配送検品済(拠点側の出発前検品)、子=配送済(部門への引渡)
+     * return: 親=回収検品済(拠点側がまとめて回収検品)、子=返却済(部門ごとの返却確定)
+     * baseは MODE_ORDER 上のインデックス基準。親の目標=MODE_ORDER[base+1]、子の目標=MODE_ORDER[base+2]。
+     * 上部の5モードタブの選択(currentLifecycleMode)と連動して自動的に切り替わる。
+     */
+    const HIER_PHASE_INFO = {
+      ship:   { base: 0, parentNote: '会場から借りる時の検品タップ', childNote: '部門への引渡タップ' },
+      return: { base: 2, parentNote: '拠点に持ち帰った時の回収検品タップ(まとめて)', childNote: '部門ごとの返却確定タップ' }
+    };
+    function getHierPhase() {
+      return (currentLifecycleMode === '回収検品済' || currentLifecycleMode === '返却済') ? 'return' : 'ship';
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     let activeLocation = urlParams.get('loc') || "";
     let activeTeam = "";
@@ -564,6 +579,12 @@
       document.getElementById('counterLabel').textContent = `${info.label}`;
       applyModeColors();
       renderList();
+      // 🆕 依頼一覧モーダルの階層タブ(部門ごと/備品ごと)を開いている最中にモード切替した場合、
+      //    ship/returnフェーズを即座に切り替えて再描画する
+      if (typeof reqListViewMode !== 'undefined' && reqListViewMode !== 'request'
+          && document.getElementById('requestListModal').classList.contains('show')) {
+        renderHierList(reqListViewMode);
+      }
     }
 
     /* =========================================================
@@ -959,8 +980,9 @@
        親=備品(または部門)・子=部門(または備品)のリーフに集計する。
        ========================================================= */
 
-    // 「拠点×備品×部門」単位のリーフを作る(ダッシュボードのbuildLeavesと同じ考え方)
-    function buildHierLeaves(items) {
+    // 「拠点×備品×部門」単位のリーフを作る(ダッシュボードのbuildLeavesと同じ考え方)。
+    // base: フェーズの基準インデックス(ship=0, return=2)。親の目標=MODE_ORDER[base+1]、子の目標=MODE_ORDER[base+2]。
+    function buildHierLeaves(items, base) {
       const map = {};
       const order = [];
       items.forEach(it => {
@@ -970,7 +992,7 @@
           map[k] = {
             location: it.location, name: it.name, dept: it.dept,
             planSum: 0, rowIds: [], codes: [], remarksValue: '',
-            _cnt: 0, _shipInsp: 0, _shipped: 0
+            _cnt: 0, _parentDone: 0, _childDone: 0
           };
           order.push(k);
         }
@@ -980,24 +1002,24 @@
         leaf.rowIds.push(it.rowId);
         if (it.code) leaf.codes.push(it.code);
         leaf._cnt++;
-        if (li >= 1) leaf._shipInsp++; // 配送検品済以降
-        if (li >= 2) leaf._shipped++;  // 配送済以降
+        if (li >= base + 1) leaf._parentDone++; // 親の目標段階以降
+        if (li >= base + 2) leaf._childDone++;  // 子の目標段階以降
         if (!leaf.remarksValue && it.remarks) leaf.remarksValue = it.remarks;
       });
       return order.map(k => {
         const l = map[k];
-        l.allShipInsp  = l._cnt > 0 && l._shipInsp === l._cnt;
-        l.someShipInsp = l._shipInsp > 0;
-        l.childChecked = l._cnt > 0 && l._shipped === l._cnt;
-        l.someShipped  = l._shipped > 0;
-        l.childIndeterminate = l.someShipped && !l.childChecked;
+        l.allParentDone  = l._cnt > 0 && l._parentDone === l._cnt;
+        l.someParentDone = l._parentDone > 0;
+        l.childChecked   = l._cnt > 0 && l._childDone === l._cnt;
+        l.someChildDone  = l._childDone > 0;
+        l.childIndeterminate = l.someChildDone && !l.childChecked;
         return l;
       });
     }
 
     // 拠点ごとにグループ化し、各拠点内で親(備品 or 部門)にリーフをまとめる
-    function buildHierLocationGroups(items, mode) {
-      const leaves = buildHierLeaves(items);
+    function buildHierLocationGroups(items, mode, base) {
+      const leaves = buildHierLeaves(items, base);
       const isEquip = (mode === 'equipment');
       const parentKeyOf  = isEquip ? (l => l.name || '(備品名なし)') : (l => l.dept || '(部門なし)');
       const childLabelOf = isEquip ? (l => l.dept || '(部門なし)') : (l => l.name || '(備品名なし)');
@@ -1020,8 +1042,8 @@
         });
         const parents = porder.map(k => pmap[k]);
         parents.forEach(p => {
-          p.checked = p.leaves.every(l => l.allShipInsp);
-          p.indeterminate = p.leaves.some(l => l.someShipInsp) && !p.checked;
+          p.checked = p.leaves.every(l => l.allParentDone);
+          p.indeterminate = p.leaves.some(l => l.someParentDone) && !p.checked;
         });
         return { location: locName, parents: parents, childLabelOf: childLabelOf };
       });
@@ -1029,9 +1051,16 @@
 
     let currentHierGroups = []; // 🆕 直近描画した拠点グループ(タップ操作のハンドラから参照)
     let currentHierMode = 'dept';
+    let currentHierBase = 0; // 🆕 直近描画時のフェーズ基準(ship=0/return=2)。タップ操作のハンドラから参照
 
     function renderHierList(mode) {
       currentHierMode = mode;
+      const phase = getHierPhase();
+      const phaseInfo = HIER_PHASE_INFO[phase];
+      currentHierBase = phaseInfo.base;
+      const parentLabel = MODE_ORDER[phaseInfo.base + 1]; // 親の目標段階名
+      const childLabel  = MODE_ORDER[phaseInfo.base + 2]; // 子の目標段階名
+
       const body = document.getElementById('requestListBody');
       const parentTitle = mode === 'equipment' ? '備品' : '部門';
       const childTitle  = mode === 'equipment' ? '部門' : '備品';
@@ -1047,13 +1076,16 @@
         return;
       }
 
-      currentHierGroups = buildHierLocationGroups(displayItems, mode);
+      currentHierGroups = buildHierLocationGroups(displayItems, mode, phaseInfo.base);
       if (currentHierGroups.length === 0) {
         body.innerHTML = '<p class="empty-hint">表示できるデータがありません。</p>';
         return;
       }
 
-      let html = `<div class="hier-note">親=${parentTitle}(会場から借りる時の検品タップ)／子=${childTitle}(引渡タップ)。数量は予定数の合計です。</div>`;
+      let html = `<div class="hier-note">
+        現在「${currentLifecycleMode}」タブ選択中のため<b>${phase === 'return' ? '回収' : '配送'}フェーズ</b>で表示しています。<br>
+        親=${parentTitle}(${phaseInfo.parentNote}・「${parentLabel}」に更新)／子=${childTitle}(${phaseInfo.childNote}・「${childLabel}」に更新)。数量は予定数の合計です。
+      </div>`;
       currentHierGroups.forEach((g, gi) => {
         html += `<div class="hier-loc-group"><div class="hier-loc-title">📍 ${escapeHtml(g.location || '(拠点未設定)')}</div>`;
         g.parents.forEach((p, pi) => {
@@ -1107,17 +1139,21 @@
       const g = currentHierGroups[gi]; if (!g) return;
       const p = g.parents[pi]; if (!p) return;
       const ids = hierParentRowIds(p);
+      const base = currentHierBase;
+      const baselineLabel = MODE_ORDER[base];     // 例: 未処理 / 配送済
+      const parentLabel   = MODE_ORDER[base + 1]; // 例: 配送検品済 / 回収検品済
+      const nextLabel     = MODE_ORDER[base + 2]; // 例: 配送済 / 返却済(「すでにこれ以降に進んだ個体」の説明に使う)
 
       if (!p.checked) {
-        const targets = hierRowsWhere(ids, i => i < 1); // 未処理の個体だけ配送検品済へ
-        if (targets.length === 0) { showToast('検品済みにできる個体がありません(すでに検品済み以降です)'); return; }
-        await hierBatchUpdate(targets, 'lifecycle', '配送検品済');
+        const targets = hierRowsWhere(ids, i => i < base + 1); // baselineの個体だけparentLabelへ
+        if (targets.length === 0) { showToast(`${parentLabel}にできる個体がありません(すでに${parentLabel}以降です)`); return; }
+        await hierBatchUpdate(targets, 'lifecycle', parentLabel);
       } else {
-        const ok = confirm(`「${p.key}」配下をまとめて検品前(未処理)に戻します。\n(すでに配送済み以降に進んだ個体はそのまま残します)`);
+        const ok = confirm(`「${p.key}」配下をまとめて${baselineLabel}に戻します。\n(すでに${nextLabel}以降に進んだ個体はそのまま残します)`);
         if (!ok) return;
-        const targets = hierRowsWhere(ids, i => i === 1); // ちょうど配送検品済の個体だけ未処理へ
-        if (targets.length === 0) { showToast('取り消せる個体がありません(すでに配送済み以降に進んでいます)'); return; }
-        await hierBatchUpdate(targets, 'lifecycle', '未処理');
+        const targets = hierRowsWhere(ids, i => i === base + 1); // ちょうどparentLabelの個体だけbaselineへ
+        if (targets.length === 0) { showToast(`取り消せる個体がありません(すでに${nextLabel}以降に進んでいます)`); return; }
+        await hierBatchUpdate(targets, 'lifecycle', baselineLabel);
       }
     }
 
@@ -1125,15 +1161,18 @@
       const g = currentHierGroups[gi]; if (!g) return;
       const p = g.parents[pi]; if (!p) return;
       const l = p.leaves[li]; if (!l) return;
+      const base = currentHierBase;
+      const parentLabel = MODE_ORDER[base + 1]; // 子の巻き戻し先(例: 配送検品済 / 回収検品済)
+      const childLabel  = MODE_ORDER[base + 2]; // 子の目標(例: 配送済 / 返却済)
 
       if (!l.childChecked) {
-        const targets = hierRowsWhere(l.rowIds, i => i < 2); // 配送済より手前の個体だけ配送済へ
-        if (targets.length === 0) { showToast('引渡済みにできる個体がありません(すでに配送済み以降です)'); return; }
-        await hierBatchUpdate(targets, 'lifecycle', '配送済'); // 子は確認なしで即時
+        const targets = hierRowsWhere(l.rowIds, i => i < base + 2); // childLabelより手前の個体だけchildLabelへ
+        if (targets.length === 0) { showToast(`${childLabel}にできる個体がありません(すでに${childLabel}以降です)`); return; }
+        await hierBatchUpdate(targets, 'lifecycle', childLabel); // 子は確認なしで即時
       } else {
-        const targets = hierRowsWhere(l.rowIds, i => i === 2); // ちょうど配送済の個体だけ配送検品済へ
-        if (targets.length === 0) { showToast('取り消せる個体がありません(すでに回収検品済み以降に進んでいます)'); return; }
-        await hierBatchUpdate(targets, 'lifecycle', '配送検品済');
+        const targets = hierRowsWhere(l.rowIds, i => i === base + 2); // ちょうどchildLabelの個体だけparentLabelへ
+        if (targets.length === 0) { showToast('取り消せる個体がありません(すでに次の段階以降に進んでいます)'); return; }
+        await hierBatchUpdate(targets, 'lifecycle', parentLabel);
       }
     }
 

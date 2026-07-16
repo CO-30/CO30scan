@@ -285,6 +285,40 @@
     }
     .code-row-remarks:focus { outline: 2px solid #2c5f8a; border-color: #2c5f8a; }
 
+    /* 🆕 依頼一覧: 表示切替タブ(依頼ごと(従来)/部門ごと/備品ごと) */
+    .hier-view-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+    .hier-view-btn {
+      flex: 1; font-size: 12px; font-weight: bold; padding: 8px 4px;
+      border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #888;
+    }
+    .hier-view-btn.active { background: #2c5f8a; border-color: #2c5f8a; color: #fff; }
+    .hier-note { font-size: 11px; color: #999; margin: -2px 0 10px; line-height: 1.5; }
+
+    /* 🆕 拠点別・部門別/備品別ロット表示(親子構造) */
+    .hier-loc-group { margin-bottom: 14px; }
+    .hier-loc-title { font-size: 13px; font-weight: bold; color: #555; margin-bottom: 6px; padding-left: 2px; }
+    .hier-parent { border: 1px solid #eee; border-radius: 10px; margin-bottom: 8px; overflow: hidden; background: #fafbfc; }
+    .hier-parent-tap {
+      width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px;
+      background: #e7eff5; border: none; text-align: left; cursor: pointer;
+    }
+    .hier-parent-tap .hier-check { font-size: 18px; flex-shrink: 0; }
+    .hier-parent-tap .hier-p-name { flex: 1; font-size: 14px; font-weight: bold; color: #1d4566; }
+    .hier-parent-tap .hier-p-qty { font-size: 13px; font-weight: bold; color: #1d4566; flex-shrink: 0; }
+    .hier-children { padding: 6px 10px 10px; }
+    .hier-child-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px dashed #e5e5e5; flex-wrap: wrap; }
+    .hier-child-row:last-child { border-bottom: none; }
+    .hier-child-tap {
+      display: flex; align-items: center; gap: 6px; border: none; background: none; padding: 4px 2px;
+      font-size: 13px; color: #333; cursor: pointer; flex-shrink: 0;
+    }
+    .hier-child-tap .hier-check { font-size: 16px; }
+    .hier-c-codes { font-size: 10.5px; font-family: "SF Mono", "Consolas", monospace; color: #999; display: block; margin-top: 1px; }
+    .hier-child-remarks {
+      flex: 1; min-width: 100px; font-size: 12px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 8px; color: #333;
+    }
+    .hier-child-remarks:focus { outline: 2px solid #2c5f8a; border-color: #2c5f8a; }
+
     /* 🆕 メインリスト・依頼一覧共通: 備考入力欄 */
     .remarks-input {
       width: 100%; margin-top: 8px; font-size: 13px; padding: 8px 10px;
@@ -406,10 +440,15 @@
   <div id="requestListModal" class="modal-overlay">
     <div class="modal-box request-list-box">
       <div class="modal-title">📋 依頼一覧(ステータス付き)</div>
+      <div class="hier-view-toggle" id="hierViewToggle">
+        <button type="button" class="hier-view-btn active" data-view="request" onclick="setReqListView('request')">依頼ごと(従来)</button>
+        <button type="button" class="hier-view-btn" data-view="dept" onclick="setReqListView('dept')">部門ごと</button>
+        <button type="button" class="hier-view-btn" data-view="equipment" onclick="setReqListView('equipment')">備品ごと</button>
+      </div>
       <div class="request-list" id="requestListBody">⏳ 読み込み中...</div>
       <div class="modal-buttons">
         <button class="modal-btn modal-btn-cancel" onclick="closeRequestList()">閉じる</button>
-        <button class="modal-btn modal-btn-confirm" onclick="loadRequestList()">再読込</button>
+        <button class="modal-btn modal-btn-confirm" onclick="reloadRequestListModal()">再読込</button>
       </div>
     </div>
   </div>
@@ -601,6 +640,10 @@
         const res = await gasGet('getInspectionData', { location: activeLocation, team: activeTeam });
         displayItems = (res && res.display) ? res.display : [];
         renderList();
+        // 🆕 階層タブ(部門ごと/備品ごと)を開いている最中の更新なら、そちらも合わせて再描画する
+        if (reqListViewMode !== 'request' && document.getElementById('requestListModal').classList.contains('show')) {
+          renderHierList(reqListViewMode);
+        }
       } catch (err) {
         showMessageModal("データ取得エラー", err.message);
       } finally {
@@ -803,15 +846,45 @@
     function escapeJs(s) { return String(s).replace(/['\\]/g, '\\$&'); }
 
     /* =========================================================
-       依頼一覧(ステータス付き)
+       依頼一覧(ステータス付き) — 「依頼ごと(従来)」タブ
        ========================================================= */
+    let reqListViewMode = 'request'; // 🆕 'request' / 'dept' / 'equipment'
+
     function openRequestList() {
       document.getElementById('requestListModal').classList.add('show');
-      loadRequestList();
+      if (reqListViewMode === 'request') {
+        loadRequestList();
+      } else {
+        renderHierList(reqListViewMode);
+      }
     }
     function closeRequestList() {
       document.getElementById('requestListModal').classList.remove('show');
     }
+
+    /** 🆕 タブ切り替え(依頼ごと(従来)/部門ごと/備品ごと) */
+    function setReqListView(mode) {
+      reqListViewMode = mode;
+      document.querySelectorAll('#hierViewToggle .hier-view-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-view') === mode);
+      });
+      if (mode === 'request') {
+        if (lastRequestListData && lastRequestListData.length > 0) renderRequestListBody();
+        else loadRequestList();
+      } else {
+        renderHierList(mode);
+      }
+    }
+
+    /** 🆕 モーダル下部の「再読込」。現在のタブに応じて、依頼一覧APIまたはdisplayItems(検品データ)を取り直す。 */
+    function reloadRequestListModal() {
+      if (reqListViewMode === 'request') {
+        loadRequestList();
+      } else {
+        loadRealData(); // displayItemsを取り直す(loadRealData内でreqListViewModeを見て階層タブも再描画される)
+      }
+    }
+
     async function loadRequestList() {
       const body = document.getElementById('requestListBody');
       body.innerHTML = '⏳ 読み込み中...';
@@ -879,9 +952,242 @@
       });
     }
 
+    /* =========================================================
+       🆕 依頼一覧 — 「部門ごと/備品ごと」タブ(拠点別・親子ロット表示)
+       displayItems(既にlocation・teamで絞り込み済みの検品データ)をそのまま使い、
+       新しいAPI取得は行わない。拠点ごとにグループ化し、その中で
+       親=備品(または部門)・子=部門(または備品)のリーフに集計する。
+       ========================================================= */
+
+    // 「拠点×備品×部門」単位のリーフを作る(ダッシュボードのbuildLeavesと同じ考え方)
+    function buildHierLeaves(items) {
+      const map = {};
+      const order = [];
+      items.forEach(it => {
+        if (it.cancelled) return; // 🆕 取消済みの依頼は階層表示から除外(スキャン自体もブロックされているため)
+        const k = it.location + '\u0001' + it.name + '\u0001' + it.dept;
+        if (!(k in map)) {
+          map[k] = {
+            location: it.location, name: it.name, dept: it.dept,
+            planSum: 0, rowIds: [], codes: [], remarksValue: '',
+            _cnt: 0, _shipInsp: 0, _shipped: 0
+          };
+          order.push(k);
+        }
+        const leaf = map[k];
+        const li = MODE_ORDER.indexOf(it.lifecycle);
+        leaf.planSum += (it.plan || 0);
+        leaf.rowIds.push(it.rowId);
+        if (it.code) leaf.codes.push(it.code);
+        leaf._cnt++;
+        if (li >= 1) leaf._shipInsp++; // 配送検品済以降
+        if (li >= 2) leaf._shipped++;  // 配送済以降
+        if (!leaf.remarksValue && it.remarks) leaf.remarksValue = it.remarks;
+      });
+      return order.map(k => {
+        const l = map[k];
+        l.allShipInsp  = l._cnt > 0 && l._shipInsp === l._cnt;
+        l.someShipInsp = l._shipInsp > 0;
+        l.childChecked = l._cnt > 0 && l._shipped === l._cnt;
+        l.someShipped  = l._shipped > 0;
+        l.childIndeterminate = l.someShipped && !l.childChecked;
+        return l;
+      });
+    }
+
+    // 拠点ごとにグループ化し、各拠点内で親(備品 or 部門)にリーフをまとめる
+    function buildHierLocationGroups(items, mode) {
+      const leaves = buildHierLeaves(items);
+      const isEquip = (mode === 'equipment');
+      const parentKeyOf  = isEquip ? (l => l.name || '(備品名なし)') : (l => l.dept || '(部門なし)');
+      const childLabelOf = isEquip ? (l => l.dept || '(部門なし)') : (l => l.name || '(備品名なし)');
+
+      const locMap = {};
+      const locOrder = [];
+      leaves.forEach(l => {
+        if (!(l.location in locMap)) { locMap[l.location] = { location: l.location, leaves: [] }; locOrder.push(l.location); }
+        locMap[l.location].leaves.push(l);
+      });
+
+      return locOrder.map(locName => {
+        const locLeaves = locMap[locName].leaves;
+        const pmap = {}; const porder = [];
+        locLeaves.forEach(l => {
+          const k = parentKeyOf(l);
+          if (!(k in pmap)) { pmap[k] = { key: k, leaves: [], planSum: 0 }; porder.push(k); }
+          pmap[k].leaves.push(l);
+          pmap[k].planSum += l.planSum;
+        });
+        const parents = porder.map(k => pmap[k]);
+        parents.forEach(p => {
+          p.checked = p.leaves.every(l => l.allShipInsp);
+          p.indeterminate = p.leaves.some(l => l.someShipInsp) && !p.checked;
+        });
+        return { location: locName, parents: parents, childLabelOf: childLabelOf };
+      });
+    }
+
+    let currentHierGroups = []; // 🆕 直近描画した拠点グループ(タップ操作のハンドラから参照)
+    let currentHierMode = 'dept';
+
+    function renderHierList(mode) {
+      currentHierMode = mode;
+      const body = document.getElementById('requestListBody');
+      const parentTitle = mode === 'equipment' ? '備品' : '部門';
+      const childTitle  = mode === 'equipment' ? '部門' : '備品';
+
+      if (!activeTeam) {
+        body.innerHTML = '<p class="empty-hint">チームを選択するとデータが表示されます</p>';
+        currentHierGroups = [];
+        return;
+      }
+      if (!displayItems || displayItems.length === 0) {
+        body.innerHTML = '<p class="empty-hint">このチームの検品対象データがありません。</p>';
+        currentHierGroups = [];
+        return;
+      }
+
+      currentHierGroups = buildHierLocationGroups(displayItems, mode);
+      if (currentHierGroups.length === 0) {
+        body.innerHTML = '<p class="empty-hint">表示できるデータがありません。</p>';
+        return;
+      }
+
+      let html = `<div class="hier-note">親=${parentTitle}(会場から借りる時の検品タップ)／子=${childTitle}(引渡タップ)。数量は予定数の合計です。</div>`;
+      currentHierGroups.forEach((g, gi) => {
+        html += `<div class="hier-loc-group"><div class="hier-loc-title">📍 ${escapeHtml(g.location || '(拠点未設定)')}</div>`;
+        g.parents.forEach((p, pi) => {
+          const pIcon = p.checked ? '✅' : (p.indeterminate ? '🔶' : '⬜');
+          html += `
+            <div class="hier-parent">
+              <button type="button" class="hier-parent-tap" data-g="${gi}" data-p="${pi}">
+                <span class="hier-check">${pIcon}</span>
+                <span class="hier-p-name">${escapeHtml(p.key)}</span>
+                <span class="hier-p-qty">${p.planSum}</span>
+              </button>
+              <div class="hier-children">`;
+          p.leaves.forEach((l, li) => {
+            const cIcon = l.childChecked ? '✅' : (l.childIndeterminate ? '🔶' : '⬜');
+            const codesText = (l.codes && l.codes.length > 0)
+              ? (l.codes.length > 4 ? l.codes.slice(0, 4).join(', ') + `, 他${l.codes.length - 4}件` : l.codes.join(', '))
+              : '';
+            html += `
+              <div class="hier-child-row">
+                <button type="button" class="hier-child-tap" data-g="${gi}" data-p="${pi}" data-l="${li}">
+                  <span class="hier-check">${cIcon}</span>
+                  <span>${escapeHtml(g.childLabelOf(l))}(${l.planSum})${codesText ? `<span class="hier-c-codes">${escapeHtml(codesText)}</span>` : ''}</span>
+                </button>
+                <input type="text" class="hier-child-remarks" list="rentalRemarkDatalist" placeholder="📝 出どころ等" value="${escapeHtml(l.remarksValue)}" data-g="${gi}" data-p="${pi}" data-l="${li}">
+              </div>`;
+          });
+          html += `</div></div>`;
+        });
+        html += `</div>`;
+      });
+      body.innerHTML = html;
+    }
+
+    // rowIds のうち、displayItems上の現在の状態(index)がpredを満たす行だけ返す(巻き戻し防止の絞り込み)
+    function hierRowsWhere(rowIds, pred) {
+      const out = [];
+      rowIds.forEach(id => {
+        const it = displayItems.find(x => String(x.rowId) === String(id));
+        if (it && pred(MODE_ORDER.indexOf(it.lifecycle))) out.push(id);
+      });
+      return out;
+    }
+
+    function hierParentRowIds(p) {
+      const ids = [];
+      p.leaves.forEach(l => { l.rowIds.forEach(id => ids.push(id)); });
+      return ids;
+    }
+
+    async function onHierParentTap(gi, pi) {
+      const g = currentHierGroups[gi]; if (!g) return;
+      const p = g.parents[pi]; if (!p) return;
+      const ids = hierParentRowIds(p);
+
+      if (!p.checked) {
+        const targets = hierRowsWhere(ids, i => i < 1); // 未処理の個体だけ配送検品済へ
+        if (targets.length === 0) { showToast('検品済みにできる個体がありません(すでに検品済み以降です)'); return; }
+        await hierBatchUpdate(targets, 'lifecycle', '配送検品済');
+      } else {
+        const ok = confirm(`「${p.key}」配下をまとめて検品前(未処理)に戻します。\n(すでに配送済み以降に進んだ個体はそのまま残します)`);
+        if (!ok) return;
+        const targets = hierRowsWhere(ids, i => i === 1); // ちょうど配送検品済の個体だけ未処理へ
+        if (targets.length === 0) { showToast('取り消せる個体がありません(すでに配送済み以降に進んでいます)'); return; }
+        await hierBatchUpdate(targets, 'lifecycle', '未処理');
+      }
+    }
+
+    async function onHierChildTap(gi, pi, li) {
+      const g = currentHierGroups[gi]; if (!g) return;
+      const p = g.parents[pi]; if (!p) return;
+      const l = p.leaves[li]; if (!l) return;
+
+      if (!l.childChecked) {
+        const targets = hierRowsWhere(l.rowIds, i => i < 2); // 配送済より手前の個体だけ配送済へ
+        if (targets.length === 0) { showToast('引渡済みにできる個体がありません(すでに配送済み以降です)'); return; }
+        await hierBatchUpdate(targets, 'lifecycle', '配送済'); // 子は確認なしで即時
+      } else {
+        const targets = hierRowsWhere(l.rowIds, i => i === 2); // ちょうど配送済の個体だけ配送検品済へ
+        if (targets.length === 0) { showToast('取り消せる個体がありません(すでに回収検品済み以降に進んでいます)'); return; }
+        await hierBatchUpdate(targets, 'lifecycle', '配送検品済');
+      }
+    }
+
+    async function onHierRemarksChange(gi, pi, li, value) {
+      const g = currentHierGroups[gi]; if (!g) return;
+      const p = g.parents[pi]; if (!p) return;
+      const l = p.leaves[li]; if (!l) return;
+      await hierBatchUpdate(l.rowIds, 'remarks', value);
+      showToast('備考を保存しました');
+    }
+
+    /** サーバーへ一括更新(updateFieldBatch)し、成功時はdisplayItemsをローカル書き換えして両方の一覧を再描画する */
+    async function hierBatchUpdate(rowIds, field, value) {
+      try {
+        const res = await gasPost('updateFieldBatch', { rowIds: rowIds, field: field, value: value });
+        if (!res || !res.success) {
+          showToast('保存に失敗しました: ' + (res && res.error ? res.error : '不明なエラー'), 'error');
+          return false;
+        }
+        rowIds.forEach(id => {
+          const it = displayItems.find(x => String(x.rowId) === String(id));
+          if (it) {
+            it[field] = value;
+            if (field === 'lifecycle') it.updatedAt = Date.now();
+          }
+        });
+        renderList();               // メインのスキャンリストも同期
+        renderHierList(currentHierMode); // 階層タブを再描画
+        return true;
+      } catch (err) {
+        showToast('⚠️ 通信エラー: ' + err.message, 'error');
+        return false;
+      }
+    }
+
     // 🆕 依頼一覧: コードをタップ → 未検品なら選択中モードに更新、既に選択中モードならタップでもう一度→直前の状態に戻す
+    //     (「依頼ごと(従来)」タブ用)。加えて、階層タブ(部門ごと/備品ごと)の親子タップもここで拾う。
     const reqListPrevLifecycle = {};
     document.getElementById('requestListBody').addEventListener('click', async function(e) {
+      const parentBtn = e.target.closest('.hier-parent-tap');
+      if (parentBtn) {
+        onHierParentTap(parseInt(parentBtn.getAttribute('data-g'), 10), parseInt(parentBtn.getAttribute('data-p'), 10));
+        return;
+      }
+      const childBtn = e.target.closest('.hier-child-tap');
+      if (childBtn) {
+        onHierChildTap(
+          parseInt(childBtn.getAttribute('data-g'), 10),
+          parseInt(childBtn.getAttribute('data-p'), 10),
+          parseInt(childBtn.getAttribute('data-l'), 10)
+        );
+        return;
+      }
+
       const btn = e.target.closest('.code-row-tap');
       if (!btn) return;
       const code = btn.dataset.code;
@@ -907,8 +1213,17 @@
       renderList();
     });
 
-    // 🆕 依頼一覧の備考入力(フォーカスが外れたら保存)
+    // 🆕 依頼一覧の備考入力(フォーカスが外れたら保存)。階層タブの子行備考もここで拾う。
     document.getElementById('requestListBody').addEventListener('focusout', function(e) {
+      if (e.target.classList.contains('hier-child-remarks')) {
+        onHierRemarksChange(
+          parseInt(e.target.getAttribute('data-g'), 10),
+          parseInt(e.target.getAttribute('data-p'), 10),
+          parseInt(e.target.getAttribute('data-l'), 10),
+          e.target.value
+        );
+        return;
+      }
       if (!e.target.classList.contains('code-row-remarks')) return;
       saveRemarks(e.target.dataset.code, e.target.value);
     });

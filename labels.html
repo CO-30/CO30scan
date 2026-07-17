@@ -114,6 +114,11 @@
     .doc-kind-badge.k-co30 { background: #8e44ad; }
     .doc-kind-badge.k-other { background: #888; }
     .btn-doc-open { background: #2c5f8a; color: #fff; border: none; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+    /* 🆕 一覧が上限で切り詰められている場合の警告 */
+    .doc-limit-warning {
+      background: #fff8e1; border: 1px solid #f0c96b; color: #8a6d00; font-size: 12.5px; font-weight: bold;
+      border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
+    }
   </style>
 </head>
 <body>
@@ -175,6 +180,7 @@
 
 <div class="tab-panel" id="tab-panel-docs">
   <div class="doc-list">
+    <div id="doc-limit-warning-host"></div>
     <div class="doc-filter-bar">
       <select id="doc-kind-filter">
         <option value="">種類: すべて</option>
@@ -200,6 +206,7 @@ var allItems = [];
 var sizeByCode = {};    // code → 's' | 'm' | 'l'(選択はフィルター変更後も維持)
 var checkedByCode = {}; // 🆕 code → true/false(印刷対象かどうか。デフォルトtrue)
 var printFolderFiles = []; // 🆕 CO30/CO31印刷センター用のファイル一覧キャッシュ
+var printFolderFilesTotalCount = 0; // 🆕 サーバー側の全件数(表示件数が上限で切り詰められていないか判定するため)
 var docCheckedByName = {}; // 🆕 ファイル名 → 選択状態(デフォルトtrue、取消済みはfalse)
 
 /* =========================================================
@@ -231,12 +238,29 @@ async function loadPrintFolderFiles() {
       body.innerHTML = '<div class="status">❌ 読み込みに失敗しました: ' + escapeHtmlDoc(msg) +
         '<br><small>「不明なアクション」と出る場合は、Apps Scriptのフォーム用デプロイ(デプロイ1)がまだ最新のコードに更新されていない可能性があります。デプロイを管理→編集→新バージョンで更新してください。</small></div>';
       printFolderFiles = [];
+      printFolderFilesTotalCount = 0;
+      renderDocLimitWarning();
       return;
     }
     printFolderFiles = json.files || [];
+    // 🆕 totalCountが無い(=旧デプロイのまま)場合は、表示件数=全件数とみなす(警告を誤って出さないため)
+    printFolderFilesTotalCount = (typeof json.totalCount === 'number') ? json.totalCount : printFolderFiles.length;
+    renderDocLimitWarning();
     renderDocList();
   } catch (err) {
     body.innerHTML = '<div class="status">❌ 取得エラー: ' + err.message + '</div>';
+  }
+}
+
+/** 🆕 サーバー側の上限(現在500件)で一覧が切り詰められている場合に警告バナーを出す */
+function renderDocLimitWarning() {
+  var host = document.getElementById('doc-limit-warning-host');
+  if (printFolderFilesTotalCount > printFolderFiles.length) {
+    host.innerHTML = '<div class="doc-limit-warning">⚠️ Googleドライブのフォルダには全' + printFolderFilesTotalCount +
+      '件のPDFがありますが、このうち最新' + printFolderFiles.length + '件だけを表示しています。' +
+      'それより古いファイルが必要な場合は、Googleドライブの印刷待ちフォルダを直接開いて確認してください。</div>';
+  } else {
+    host.innerHTML = '';
   }
 }
 

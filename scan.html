@@ -980,6 +980,12 @@
        親=備品(または部門)・子=部門(または備品)のリーフに集計する。
        ========================================================= */
 
+    // 🆕 CO-30作成時にロット(数量6以上)へ付与される「 ×数量」を取り除き、
+    //    通常個体・他ロットと同じ品目としてグループ化できるようにする(表示専用。CO-30印刷内容は変更しない)
+    function baseItemName_(name) {
+      return String(name || '').replace(/\s*×\s*\d+\s*$/, '').trim();
+    }
+
     // 「拠点×備品×部門」単位のリーフを作る(ダッシュボードのbuildLeavesと同じ考え方)。
     // base: フェーズの基準インデックス(ship=0, return=2)。親の目標=MODE_ORDER[base+1]、子の目標=MODE_ORDER[base+2]。
     function buildHierLeaves(items, base) {
@@ -987,10 +993,11 @@
       const order = [];
       items.forEach(it => {
         if (it.cancelled) return; // 🆕 取消済みの依頼は階層表示から除外(スキャン自体もブロックされているため)
-        const k = it.location + '\u0001' + it.name + '\u0001' + it.dept;
+        const cleanName = baseItemName_(it.name);
+        const k = it.location + '\u0001' + cleanName + '\u0001' + it.dept;
         if (!(k in map)) {
           map[k] = {
-            location: it.location, name: it.name, dept: it.dept,
+            location: it.location, name: cleanName, dept: it.dept,
             planSum: 0, rowIds: [], codes: [], remarksValue: '',
             _cnt: 0, _parentDone: 0, _childDone: 0
           };

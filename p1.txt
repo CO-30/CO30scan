@@ -1,1 +1,1300 @@
+/**
+ * 【CO-31 大会配送依頼 + CO-30 用具受取書 + 現場検品 + メール承認フロー】
+ *
+ * 🆕 今回(4回目)の大規模改修:
+ *   A. 番号体系を全面刷新
+ *      - CO31_Responses B列: 内部依頼ID(全体通し番号。修正時も不変。CO30_Inspectionとの紐付け専用)
+ *      - CO31_Responses 末尾列: 表示用ページ番号(部門ごと・PDF1枚ごとに1から連番。承認のたびに再計算)
+ *      - CO31テンプレート C2(結合 C2:D2) に「表示用ページ番号」を1枚ずつ印字
+ *      - CO30テンプレート AF3(結合 AF3:AK3) に「拠点ごと・PDF1枚ごとの通し番号」を印字(スクリプトプロパティで永続化)
+ *      - CO30の用具番号(物品コード) = Depot_MasterのC列(識別記号) + 拠点内通し番号 + 枝番
+ *        枝番ルール: 数量1→枝番なし / 数量2〜5→A,B,C... / 数量6以上→"*"を付け説明欄に数量を明記
+ *      - CO30の依頼番号セル(AI/AK列)には「依頼部門 + 表示用ページ番号」を印字し、CO31を参照できるようにする
+ *      - CO30の貸出先セル(AB/AG列)にはCO31の配送先(場所)を印字
+ *   B. CO31→CO30のフィールドリンク
+ *      - 配送元 → CO30所有者(E5、既存のまま)
+ *      - 配送先(場所) → CO30貸出先(AB/AG列、行ごと)
+ *      - 数量・品名・サイズと重量 → CO30説明欄(F列)に結合して表示
+ *   C. Google Drive保存
+ *      - 印刷用CO31・CO30のPDFをどちらもフォルダに自動保存(フォルダIDは定数で一括切替可能)
+ *   D. 検品スキャナー
+ *      - 「未処理/配送検品済/配送済/回収検品済/返却済」の5モード切替に対応(handleApiRequestのupdateLifecycleをそのまま利用)
+ *      - 依頼一覧APIはCO30_Inspectionの内部依頼IDで紐付け、物品名でグルーピングして返す
+ *   E. ダッシュボード
+ *      - CO30_Inspectionに「依頼部門」「備考」列を追加。表示は依頼部門/用具番号/物品名/ライフサイクル/備考/依頼番号の6項目に簡素化
+ *   F. その他
+ *      - 配送元・配送先(場所)の候補に「劇場棟」を追加(index.html側)
+ *      - 費用欄は空欄可(既存のまま維持)
+ *
+ * 🔧 セットアップ:
+ *   1. Dept_Masterの「運送・用具部門」行のD列に承認者メールをカンマ区切りで入力
+ *   2. Depot_Master(旧Owner_Master)のA列=拠点名、C列=識別記号(例: 案, 倉, 劇 など)
+ *   3. デプロイ1(全員) / デプロイ2(Googleアカウント必須・承認ページ用)
+ *   4. スクリプトプロパティ APPROVAL_BASE_URL にデプロイ2のURLを保存
+ *   ⚠️ コード更新後は必ず「デプロイを管理 → 編集 → 新バージョン」でデプロイ更新すること!
+ *
+ * 🩺 診断用: Apps Scriptエディタから直接実行できる DEBUG_testCO31TemplateCells() /
+ *   DEBUG_testCO30TemplateCells() を用意。デプロイの問題を切り分けたい場合に実行し、
+ *   生成されたテスト用シート(削除せず残します)を目視確認してください。
+ */
 
+// =========================================================
+// 定数
+// =========================================================
+
+const CO31_NUMBER_CELL = "C2";     // CO31テンプレート: 表示用ページ番号(結合 C2:D2)
+const CO30_NUMBER_CELL = "AF3";    // CO30テンプレート: 拠点ごとの通し番号(結合 AF3:AK3)
+
+// CO30テンプレート 物品行(5行/ページ)の開始行
+const CO30_ITEM_ROWS = [12, 14, 16, 18, 20];
+// 各行の列(すべて結合セルにつき左上を指定。setCell_が自動で左上に補正する)
+const CO30_COL_TOOLNO = "B";  // 用具番号(結合 B:D)
+const CO30_COL_DESC   = "F";  // 説明(結合、既存のまま)
+const CO30_COL_LENDER = "AB"; // 貸出先=CO31配送先(結合 AB:AG)
+const CO30_COL_REQREF = "AI"; // 依頼番号(部門+ページ番号、結合 AI:AK)
+
+// 🆕 CO30_別紙_Template: 1ページ目(CO30_Template)に収まらない分を続ける別紙。
+// 1ページ目より物品欄が広いため(49行/ページ)、多品目の拠点でもページ数を抑えられる。
+const CO30_SUPPL_SHEET_NAME = "CO30_別紙_Template";
+const CO30_SUPPL_ITEM_FIRST_ROW = 4;
+const CO30_SUPPL_ITEM_LAST_ROW = 48;      // A4〜A48 = 45行分(品目が入る範囲)
+const CO30_SUPPL_CAPACITY = CO30_SUPPL_ITEM_LAST_ROW - CO30_SUPPL_ITEM_FIRST_ROW + 1; // 45
+const CO30_SUPPL_COL_TOOLNO  = "A";
+const CO30_SUPPL_COL_DESC    = "B";
+const CO30_SUPPL_COL_LENDER  = "C";
+const CO30_SUPPL_COL_REMARKS = "D"; // 🆕 備考(依頼メモ。同じ依頼の2行目以降は空欄にして重複表示を防ぐ)
+const CO30_SUPPL_COL_REQREF  = "E";
+const CO30_SUPPL_NUMBER_CELL = "E1"; // 1ページ目のCO30と同じ番号を入れる
+const CO30_SUPPL_DEPOT_CELL  = "B2"; // 貸出元拠点
+const CO30_SUPPL_PAGECOUNT_CELL = "C49"; // 「n / 総ページ数」表示セル
+const CO30_SUPPL_PRINT_LAST_ROW = 49; // 🆕 印刷(PDF結合)に使う範囲。C49を含めるため品目範囲(48)より1行広い
+
+// 🆕 Google Drive 保存先フォルダ。
+// 2026trucking@gmail.com アカウントに「CO31_印刷待ち」フォルダを新規作成し、
+// スクリプトの実行アカウントに編集権限を共有した後、ここをそのフォルダIDに差し替えてください。
+// (差し替えるまでは従来のフォルダにそのまま保存されます)
+const CO31_PRINT_FOLDER_ID = "1hCGy_Sbnbg9kPuoHe5FhxIA7kWCSqV6v";
+
+// ===== 送信の見た目を統一（差出人アドレスは実行アカウント=arakaki.jp のまま変えない） =====
+const MAIL_SENDER_NAME = "2026大会 運送・用具部門";   // 受信側に表示される差出人名
+const MAIL_REPLY_TO    = "2026trucking@gmail.com";     // 返信先
+
+// すべての自動メールはこのラッパー経由で送る（name/replyTo を一括付与）。
+// ※内部は MailApp["sendEmail"] とブラケット記法。これにより手順2の一括置換で
+//   ラッパー自身が置換されず、自己再帰（無限ループ）を防ぐ。
+function sendMail_(recipientOrOptions, subject, body, options) {
+  const opts = (typeof recipientOrOptions === 'string')
+    ? Object.assign({ to: recipientOrOptions, subject: subject, body: body }, options || {})
+    : Object.assign({}, recipientOrOptions);   // 既存の to/cc/subject/body/attachments はそのまま保持
+  if (!opts.name)    opts.name = MAIL_SENDER_NAME;      // 呼び出し側で個別指定があればそちら優先
+  if (!opts.replyTo) opts.replyTo = MAIL_REPLY_TO;
+  MailApp["sendEmail"](opts);
+}
+
+// CO31_Responses の列レイアウト(1始まり)
+//  A(1)=タイムスタンプ / B(2)=内部依頼ID / C(3)=依頼日 / D(4)=配送元 / E(5)=部門 /
+//  F(6)=配送先(場所) / G(7)=搬入希望 / H(8)=費用 / I〜W(9-23)=物品1〜5 /
+//  X(24)=合計 / Y(25)=特記 / Z(26)=責任者 / AA(27)=親依頼ID(グループID) /
+//  AD(30)=ステータス / AE(31)=担当TM /
+//  AF(32)=担当者名・連絡先 / AG(33)=担当者メール / AH(34)〜BZ(78)=物品6〜20(旧形式のみ) /
+//  最終列(79列目, index78)=表示用ページ番号(例: "5" または "5-8")
+//
+// 🆕 新形式: 1依頼=複数行(1行あたり最大5品目、物品1〜5列のみ使用)。
+//    同じ依頼の行はAA列の親依頼IDで束ね、行ごとに独立して番号採番・PDF生成・承認する。
+//    AA列が空の行は旧形式(1行=1依頼・最大20品目)としてそのまま扱う(後方互換)。
+const CO31_TOTAL_COLS = 80;
+const CO31_COL_DISPLAYPAGE_IDX = 78; // 0始まりindex(=79列目): 表示用依頼番号
+const CO31_COL_CHANGED_IDX = 79;     // 0始まりindex(=80列目): 修正時に変更したフィールドのJSON
+const CO31_COL_GROUPID_IDX = 26;     // 🆕 0始まりindex(=27列目/AA列): 親依頼ID(1依頼を構成する複数行を束ねる)
+
+// 🆕 フォーム(デプロイ1)のURL。承認完了メールの「修正リンク」の生成に使う。
+// script.googleusercontent.com経由でも動くよう、通常はこの値のままで問題ない。
+// もしデプロイ1を作り直してURLが変わった場合は、スクリプトプロパティ FORM_BASE_URL を設定すれば上書きできる。
+const CO31_FORM_BASE_URL_FALLBACK = "https://script.google.com/macros/s/AKfycbxNEE_cTr3b_M3yyra5Qd3BON-FXkhPv7Qp22IGrkEEwQq7S8j7p6eWUdalxA-V_eeT/exec";
+function getFormBaseUrl_() {
+  return PropertiesService.getScriptProperties().getProperty("FORM_BASE_URL") || CO31_FORM_BASE_URL_FALLBACK;
+}
+
+// =========================================================
+// TM判定
+// =========================================================
+
+function determineTeam_(fromLocation) {
+  const loc = String(fromLocation || "").trim();
+  if (!loc) return "運送";
+
+  // 🆕 Item_MasterのH列(拠点名)・J列(担当TM)で拠点ごとに担当TMを指定できるようにする。
+  //    同じ拠点が複数行ある場合は、最初に見つかった行の値を採用する。
+  //    空欄の拠点は従来どおり「運送」扱い。拠点が増えてもコード変更なしで対応できる。
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Item_Master");
+    if (sheet) {
+      const values = sheet.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        if (String(values[i][7] || "").trim() !== loc) continue; // H列=拠点名
+        const team = String(values[i][9] || "").trim();          // J列=担当TM
+        if (team === "レンタル" || team === "運送") return team;
+      }
+    }
+  } catch (e) {}
+
+  // マスタに指定が無い場合のフォールバック(旧仕様の互換)
+  if (loc === "コンベンションセンター") return "レンタル";
+  return "運送";
+}
+
+// =========================================================
+// 結合セル対応の安全な書き込みヘルパー
+// =========================================================
+
+function setCell_(sheet, a1, value, numberFormat) {
+  const range = sheet.getRange(a1);
+  const merged = range.getMergedRanges();
+  const target = (merged && merged.length > 0) ? merged[0] : range;
+  if (numberFormat) target.setNumberFormat(numberFormat);
+  target.setValue(value);
+}
+
+/** 🆕 setCell_と同じだが、highlightがtrueならセル背景を黄色にする(修正箇所の可視化用) */
+function setCellHL_(sheet, a1, value, highlight, numberFormat) {
+  const range = sheet.getRange(a1);
+  const merged = range.getMergedRanges();
+  const target = (merged && merged.length > 0) ? merged[0] : range;
+  if (numberFormat) target.setNumberFormat(numberFormat);
+  target.setValue(value);
+  target.setBackground(highlight ? "#fff3b0" : null);
+}
+
+// =========================================================
+// 🩺 診断用デバッグ関数(Apps Scriptエディタから直接「実行」できる)
+// =========================================================
+
+/**
+ * CO31_Templateをコピーし、番号欄(C2)・配送先(部門)(N4)・配送先(場所)(M6)・
+ * 担当者連絡先(M8)に判別しやすいテスト文字列を書き込む。
+ * シートは削除せず残すので、実行後にスプレッドシートを開いて
+ * 「TEST_CO31_...」という名前のシートを直接目視確認してください。
+ * これで問題があれば「テンプレートの実セルが想定と違う」ことが分かり、
+ * 問題がなければ「デプロイが更新されていない」ことが原因と切り分けられます。
+ */
+function DEBUG_testCO31TemplateCells() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const templateSheet31 = ss.getSheetByName("CO31_Template");
+  if (!templateSheet31) { SpreadsheetApp.getUi().alert("CO31_Templateが見つかりません"); return; }
+  const test = templateSheet31.copyTo(ss);
+  test.setName("TEST_CO31_" + Utilities.formatDate(new Date(), "JST", "HHmmss"));
+  setCell_(test, CO31_NUMBER_CELL, "【番号テスト99】");
+  setCell_(test, "N4", "【部門テストOK】");
+  setCell_(test, "M6", "【場所テストOK】");
+  setCell_(test, "M8", "【担当者テストOK】");
+  SpreadsheetApp.getUi().alert("✅ テストシート「" + test.getName() + "」を作成しました。開いて各セルに文字が正しく表示されているか確認してください。");
+}
+
+/** CO30版の同様のテスト */
+function DEBUG_testCO30TemplateCells() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const templateSheet30 = ss.getSheetByName("CO30_Template");
+  if (!templateSheet30) { SpreadsheetApp.getUi().alert("CO30_Templateが見つかりません"); return; }
+  const test = templateSheet30.copyTo(ss);
+  test.setName("TEST_CO30_" + Utilities.formatDate(new Date(), "JST", "HHmmss"));
+  setCell_(test, CO30_NUMBER_CELL, "【CO30番号テスト99】");
+  CO30_ITEM_ROWS.forEach(function(row, i) {
+    setCell_(test, CO30_COL_TOOLNO + row, "テスト" + (i + 1));
+    setCell_(test, CO30_COL_DESC + row, "【説明テストOK" + (i + 1) + "】");
+    setCell_(test, CO30_COL_LENDER + row, "【貸出先テストOK" + (i + 1) + "】");
+    setCell_(test, CO30_COL_REQREF + row, "【依頼番号テストOK" + (i + 1) + "】");
+  });
+  SpreadsheetApp.getUi().alert("✅ テストシート「" + test.getName() + "」を作成しました。開いて各セルを確認してください。");
+}
+
+// =========================================================
+// doGet: フォーム / API / 承認ページ / ダッシュボード
+// =========================================================
+
+function doGet(e) {
+  if (e && e.parameter && e.parameter.page === 'dashboard') {
+    return HtmlService.createHtmlOutputFromFile('dashboard')
+      .setTitle('CO-30 監督者ダッシュボード')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+  }
+  if (e && e.parameter && e.parameter.action === 'approvalPage') {
+    const userEmail = Session.getActiveUser().getEmail();
+    return showApprovalPage_(e.parameter.token, userEmail);
+  }
+  if (e && e.parameter && e.parameter.action) {
+    return handleApiRequest_(e.parameter.action, e.parameter);
+  }
+  // 🆕 メール内の「修正リンク」から開かれた場合、mode/dept/reqNoをテンプレートに埋め込んで渡す
+  // (Apps ScriptのWebアプリはiframe化されるため、クライアント側でURLパラメータを直接読めないことがある)
+  const tmpl = HtmlService.createTemplateFromFile('index');
+  tmpl.initialMode  = (e && e.parameter && e.parameter.mode)  ? e.parameter.mode  : '';
+  tmpl.initialDept  = (e && e.parameter && e.parameter.dept)  ? e.parameter.dept  : '';
+  tmpl.initialReqNo = (e && e.parameter && e.parameter.reqNo) ? e.parameter.reqNo : '';
+  return tmpl.evaluate()
+      .setTitle('CO-31 大会配送依頼 Webフォーム')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// =========================================================
+// doPost: 承認フォーム送信 / GitHub Pages API
+// =========================================================
+
+function doPost(e) {
+  if (e.parameter && e.parameter.action === 'doApprove') {
+    // 🆕 Session.getActiveUser()は組織外アカウントで空になることがあるため、
+    //    承認ページでプルダウン選択された値を優先し、無ければセッションのメールにフォールバックする。
+    const selectedEmail = e.parameter.approverEmail || "";
+    const sessionEmail = Session.getActiveUser().getEmail();
+    const userEmail = selectedEmail || sessionEmail;
+    return processApprovalByToken_(e.parameter.token, userEmail);
+  }
+  try {
+    const body = JSON.parse(e.postData.contents);
+    return handleApiRequest_(body.action, body.payload || {});
+  } catch (err) {
+    return jsonResponse_({ success: false, error: "リクエストの解析に失敗: " + err.message });
+  }
+}
+
+function handleApiRequest_(action, params) {
+  try {
+    if (action === 'getInspectionData') {
+      const displayItems = getInspectionData(params.location || "", params.team || "");
+      const allItems = getInspectionData(params.location || "", "");
+      return jsonResponse_({ display: displayItems, all: allItems });
+    }
+    if (action === 'listRequests') {
+      return jsonResponse_({ success: true, requests: listRequestsForScanner() });
+    }
+    if (action === 'listPrintFolderFiles') {
+      const result = listPrintFolderFiles_();
+      return jsonResponse_({ success: true, files: result.files, totalCount: result.totalCount });
+    }
+    if (action === 'updateInspectionQty') {
+      const result = updateInspectionQty(
+        params.location || "",
+        params.itemCode,
+        parseInt(params.newQty, 10),
+        params.rowId ? parseInt(params.rowId, 10) : null
+      );
+      return jsonResponse_(result);
+    }
+    if (action === 'updateLifecycle') {
+      // 🆕 5モード(未処理/配送検品済/配送済/回収検品済/返却済)いずれも同じAPIで処理
+      const result = updateLifecycle(
+        params.location || "",
+        params.itemCode,
+        params.lifecycle || "未処理"
+      );
+      return jsonResponse_(result);
+    }
+    if (action === 'updateFieldBatch') {
+      // 🆕 拠点別・備品別ロット表示(親子チェック)からの一括更新用。ダッシュボードのupdateInspectionFieldBatchをJSON API経由で呼べるようにする中継。
+      const rowIds = Array.isArray(params.rowIds) ? params.rowIds : String(params.rowIds || '').split(',').filter(Boolean);
+      const result = updateInspectionFieldBatch(rowIds, params.field || '', params.value || '');
+      return jsonResponse_(result);
+    }
+    if (action === 'updateRemarks') {
+      // 🆕 スキャナー側(依頼一覧・スキャン履歴)から備考(どこから取ったか等)を更新する
+      const result = updateInspectionRemarks_(params.location || "", params.itemCode, params.remarks || "");
+      return jsonResponse_(result);
+    }
+    if (action === 'getRentalRemarkOptions') {
+      // 🆕 Item_MasterのK列(レンタル備考候補)を返す
+      return jsonResponse_({ success: true, options: getRentalRemarkOptions_() });
+    }
+    return jsonResponse_({ success: false, error: "不明なアクション: " + action });
+  } catch (err) {
+    return jsonResponse_({ success: false, error: err.message });
+  }
+}
+
+function jsonResponse_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** 🆕 印刷待ちフォルダ内のPDFを新しい順に返す(QRラベル印刷ページと統合した印刷センター用) */
+/** 🆕 現在「取消」になっているCO31依頼の表示番号一覧を返す(印刷センターでの取消フラグ付け用) */
+function getCancelledRequestNumbers_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("CO31_Responses");
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, CO31_TOTAL_COLS).getValues();
+  const nums = [];
+  values.forEach(function(r) {
+    const status = String(r[29] || "").trim();
+    if (status !== "取消") return;
+    const reqNo = String(r[CO31_COL_DISPLAYPAGE_IDX] || "").trim();
+    if (reqNo) nums.push(reqNo);
+  });
+  return nums;
+}
+
+function listPrintFolderFiles_() {
+  try {
+    const cancelledNumbers = getCancelledRequestNumbers_();
+    const folder = DriveApp.getFolderById(CO31_PRINT_FOLDER_ID);
+    const iter = folder.getFilesByType(MimeType.PDF);
+    const files = [];
+    while (iter.hasNext()) {
+      const f = iter.next();
+      const name = f.getName();
+      const kind = name.indexOf("CO-30") === 0 || name.indexOf("CO30") !== -1 ? "CO30"
+                 : (name.indexOf("CO31") !== -1 || name.indexOf("CO-31") !== -1) ? "CO31" : "その他";
+      // 🆕 「No1」が「No10」等に誤マッチしないよう、後ろに数字が続かない場合だけ一致とみなす
+      const cancelled = cancelledNumbers.some(function(num) {
+        const esc = String(num).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp("No" + esc + "(?!\\d)").test(name);
+      });
+      files.push({
+        name: name,
+        url: f.getUrl(),
+        kind: kind,
+        cancelled: cancelled,
+        createdAt: f.getDateCreated().getTime()
+      });
+    }
+    files.sort(function(a, b) { return b.createdAt - a.createdAt; });
+    const CAP = 500; // 🆕 150→500に引き上げ
+    return { files: files.slice(0, CAP), totalCount: files.length };
+  } catch (e) {
+    return { files: [], totalCount: 0 };
+  }
+}
+
+// =========================================================
+// 共通ユーティリティ: 物品1〜20を配列化
+// =========================================================
+
+function collectItems_(rowArr) {
+  const items = [];
+  const firstBlocks = [8, 11, 14, 17, 20]; // 物品1〜5(0始まりindex)
+  firstBlocks.forEach(function(i) {
+    const qty  = rowArr[i]     ? String(rowArr[i]).trim()     : "";
+    const name = rowArr[i + 1] ? String(rowArr[i + 1]).trim() : "";
+    const size = rowArr[i + 2] ? String(rowArr[i + 2]).trim() : "";
+    if (name || qty) items.push({ qty: qty, name: name, size: size });
+  });
+  for (let i = 33; i <= 75; i += 3) { // 物品6〜20
+    const qty  = rowArr[i]     ? String(rowArr[i]).trim()     : "";
+    const name = rowArr[i + 1] ? String(rowArr[i + 1]).trim() : "";
+    const size = rowArr[i + 2] ? String(rowArr[i + 2]).trim() : "";
+    if (name || qty) items.push({ qty: qty, name: name, size: size });
+  }
+  return items;
+}
+
+// =========================================================
+// 🆕 内部依頼ID(全体通し番号・修正しても不変・CO30_Inspection紐付け専用)
+// =========================================================
+
+function assignInternalRequestId_(sheet, row) {
+  const existing = sheet.getRange(row, 2).getValue();
+  if (existing && String(existing).trim() !== "") return String(existing).trim();
+
+  const lastRow = sheet.getLastRow();
+  let maxId = 0;
+  if (lastRow >= 2) {
+    const vals = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+    vals.forEach(function(v) {
+      const n = parseInt(v[0], 10);
+      if (!isNaN(n)) maxId = Math.max(maxId, n);
+    });
+  }
+  const newId = maxId + 1;
+  sheet.getRange(row, 2).setValue(newId);
+  return String(newId);
+}
+
+// =========================================================
+// 🆕 親依頼ID(グループID): 1依頼を構成する複数行をAA列で束ねる
+// =========================================================
+
+/** AA列(27列目)の最大値+1で新しい親依頼IDを採番する(internalIdと同方式・別カウンタ) */
+function assignNewGroupId_(sheet) {
+  const lastRow = sheet.getLastRow();
+  let maxId = 0;
+  if (lastRow >= 2) {
+    const vals = sheet.getRange(2, CO31_COL_GROUPID_IDX + 1, lastRow - 1, 1).getValues();
+    vals.forEach(function(v) {
+      const n = parseInt(v[0], 10);
+      if (!isNaN(n)) maxId = Math.max(maxId, n);
+    });
+  }
+  return String(maxId + 1);
+}
+
+/** 親依頼IDに紐づく行番号を昇順で返す(行順=ページ順として固定) */
+function getGroupRowNumbers_(sheet, groupId) {
+  if (!groupId) return [];
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const vals = sheet.getRange(2, CO31_COL_GROUPID_IDX + 1, lastRow - 1, 1).getValues();
+  const rows = [];
+  for (let i = 0; i < vals.length; i++) {
+    if (String(vals[i][0] || "").trim() === String(groupId).trim()) rows.push(i + 2);
+  }
+  return rows;
+}
+
+/** グループ内の行ステータスが混在している場合の表示用集約(未完了寄りを優先) */
+function aggregateGroupStatus_(statuses) {
+  const uniq = [];
+  statuses.forEach(function(s) {
+    if (s && uniq.indexOf(s) === -1) uniq.push(s);
+  });
+  if (uniq.length <= 1) return uniq[0] || "";
+  const priority = ["承認待ち", "CO30作成待ち", "承認", "送信完了", "取消"];
+  for (let i = 0; i < priority.length; i++) {
+    if (uniq.indexOf(priority[i]) !== -1) return priority[i];
+  }
+  return uniq[0];
+}
+
+// =========================================================
+// 🆕 表示用ページ番号(部門ごと・PDF1枚ごとに1から連番。承認のたびに再計算)
+// =========================================================
+
+/**
+ * Dept_MasterのC列から部門の略語を取得する(例: 設営部門→"設")。
+ */
+function getDeptAbbrev_(deptName) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Dept_Master");
+    if (!sheet) return "";
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][0]).trim() === String(deptName).trim()) {
+        return values[i][2] ? String(values[i][2]).trim() : "";
+      }
+    }
+  } catch (e) {}
+  return "";
+}
+
+/**
+ * この部門で現在使われている最大の「基準番号」(末尾の -N 改訂サフィックスは除く)を調べる。
+ */
+function getMaxBaseNumberForDept_(sheet, deptName, excludeRow) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const values = sheet.getRange(2, 1, lastRow - 1, CO31_TOTAL_COLS).getValues();
+  let max = 0;
+  for (let i = 0; i < values.length; i++) {
+    const rowNum = i + 2;
+    if (rowNum === excludeRow) continue;
+    if (String(values[i][4] || "").trim() !== String(deptName).trim()) continue;
+    const disp = String(values[i][CO31_COL_DISPLAYPAGE_IDX] || "").trim();
+    if (!disp) continue;
+    const m = disp.match(/(\d+)/); // 略語の直後の数字部分=基準番号
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return max;
+}
+
+/**
+ * 🆕 承認のたびに呼び出す。
+ * 初回承認: 部門ごとに新しい基準番号を採番する。例: "設5"
+ * 修正後の再承認: 既存の基準番号を維持したまま、末尾に改訂回数を付与する。
+ *   例: "設5" → 1回目の修正で "設5-1" → 2回目の修正で "設5-2"
+ * これにより、番号を見ただけで「修正版である」ことが一目で分かる。
+ */
+function assignCO31DisplayNumber_(sheet, row, deptName, isRevisionRequested) {
+  const existing = String(sheet.getRange(row, CO31_COL_DISPLAYPAGE_IDX + 1).getValue() || "").trim();
+
+  if (existing) {
+    // 🆕 既に番号があっても、修正マークが無ければ「失敗した処理のやり直し」とみなし番号を据え置く。
+    //    (これが無いと、再処理のたびに -1, -2 と改訂番号が進んでしまう)
+    if (!isRevisionRequested) {
+      return { display: existing, isRevision: false };
+    }
+    const m = existing.match(/^(.*?)(?:-(\d+))?$/);
+    let base = existing, revision = 0;
+    if (m) {
+      base = m[1] || existing;
+      revision = m[2] ? parseInt(m[2], 10) : 0;
+    }
+    const display = `${base}-${revision + 1}`;
+    sheet.getRange(row, CO31_COL_DISPLAYPAGE_IDX + 1).setNumberFormat("@").setValue(display);
+    return { display: display, isRevision: true };
+  }
+
+  const abbrev = getDeptAbbrev_(deptName) || String(deptName || "").trim().slice(0, 1);
+  const maxSoFar = getMaxBaseNumberForDept_(sheet, deptName, row);
+  const display = `${abbrev}${maxSoFar + 1}`;
+  sheet.getRange(row, CO31_COL_DISPLAYPAGE_IDX + 1).setNumberFormat("@").setValue(display);
+  return { display: display, isRevision: false };
+}
+
+/**
+ * 🆕 修正(再承認)の際、旧データと新データを比較して変更されたフィールドを検出する。
+ * 戻り値: { fields: ["fromLocation", ...], itemIndices: [0, 2, ...] }
+ * fieldsは書式済みの項目名の配列、itemIndicesはcollectItems_後の物品リストの位置(0始まり)。
+ */
+function detectChangedFields_(oldRow, newRow) {
+  const changed = { fields: [], itemIndices: [] };
+  const scalarMap = {
+    docDate: 2, fromLocation: 3, toLocation: 5, arrival: 6, cost: 7,
+    totalNote: 24, approver: 25, contactInfo: 31, contactEmail: 32
+  };
+  Object.keys(scalarMap).forEach(function(key) {
+    const idx = scalarMap[key];
+    if (String(oldRow[idx] || "") !== String(newRow[idx] || "")) changed.fields.push(key);
+  });
+
+  const oldItems = collectItems_(oldRow);
+  const newItems = collectItems_(newRow);
+  const maxLen = Math.max(oldItems.length, newItems.length);
+  for (let i = 0; i < maxLen; i++) {
+    const o = oldItems[i] || { qty: "", name: "", size: "" };
+    const n = newItems[i] || { qty: "", name: "", size: "" };
+    if (o.qty !== n.qty || o.name !== n.name || o.size !== n.size) changed.itemIndices.push(i);
+  }
+  return changed;
+}
+
+/** 🆕 変更フィールドのキー→日本語ラベル */
+const CO31_FIELD_LABELS_ = {
+  docDate: "依頼日", fromLocation: "配送元", toLocation: "配送先(場所)",
+  arrival: "搬入希望日時", cost: "費用", totalNote: "特記事項",
+  approver: "責任者氏名", contactInfo: "担当者・連絡先", contactEmail: "担当者メール"
+};
+
+/**
+ * 🆕 detectChangedFields_の結果を、メール本文に載せられる日本語の箇条書きサマリーに変換する。
+ * newItemsには変更後(collectItems_後)の物品リストを渡す。
+ */
+function buildChangeSummary_(changedInfo, newItems) {
+  const lines = [];
+  (changedInfo.fields || []).forEach(function(key) {
+    lines.push(`・${CO31_FIELD_LABELS_[key] || key}`);
+  });
+  if (changedInfo.itemIndices && changedInfo.itemIndices.length > 0) {
+    const descs = changedInfo.itemIndices.map(function(idx) {
+      const it = newItems[idx];
+      return it && it.name ? `${idx + 1}品目目(${it.name})` : `${idx + 1}品目目(削除)`;
+    });
+    lines.push(`・物品: ${descs.join("、")}`);
+  }
+  return lines.length > 0 ? lines.join("\n") : "(変更箇所は検出されませんでした)";
+}
+
+
+// =========================================================
+// 🆕 拠点(Depot_Master)識別記号 と 用具番号の採番
+// =========================================================
+
+function getDepotCode_(depotName) {
+  const name = String(depotName || "").trim();
+
+  // 🆕 まずItem_MasterのH列(拠点名)・G列(識別記号)を見る。
+  //    同じ拠点が複数行ある場合は、最初に見つかった行の値を採用する。
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Item_Master");
+    if (sheet) {
+      const values = sheet.getDataRange().getValues();
+      for (let i = 1; i < values.length; i++) {
+        if (String(values[i][7] || "").trim() !== name) continue; // H列=拠点名
+        const code = String(values[i][6] || "").trim();           // G列=識別記号
+        if (code) return code;
+      }
+    }
+  } catch (e) {}
+
+  // 従来のDepot_Master / Owner_MasterのC列も引き続き参照する(既存設定を無駄にしないため)
+  const candidateSheets = ["Depot_Master", "Owner_Master"];
+  for (let s = 0; s < candidateSheets.length; s++) {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(candidateSheets[s]);
+    if (!sheet) continue;
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][0]).trim() === name) {
+        const code = values[i][2] ? String(values[i][2]).trim() : "";
+        if (code) return code;
+      }
+    }
+  }
+
+  // どこにも無ければ拠点名の先頭1文字を識別記号として使う
+  return name.slice(0, 1) || "拠";
+}
+
+/** CO30_Inspectionに既にある物品コードから、この識別記号の最大連番を調べる(部門略語プレフィックスが前に付いても検出できるよう、先頭固定はしない) */
+function getMaxToolSeqForDepotCode_(depotCode) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("CO30_Inspection");
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  const codes = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues();
+  const escaped = depotCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(escaped + "(\\d+)");
+  let max = 0;
+  codes.forEach(function(c) {
+    const m = String(c[0] || "").match(re);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return max;
+}
+
+/** CO30拠点ごとの通し番号(印刷用)。スクリプトプロパティで永続化し、バッチ生成をまたいで増え続ける。 */
+function nextCO30PageNumber_(depotName) {
+  const props = PropertiesService.getScriptProperties();
+  const key = "co30pn_" + depotName;
+  let cur = parseInt(props.getProperty(key) || "0", 10);
+  cur += 1;
+  props.setProperty(key, String(cur));
+  return cur;
+}
+
+/**
+ * 🆕 指定した拠点の「現在のCO30_Inspectionの内容」だけを使って、CO30 PDFを作り直す(再印刷)。
+ * 用具番号・ライフサイクル・依頼番号など、既存のデータは一切変更しない(読み取るだけ)。
+ * PDFは一度作ると内容が更新されない静止画のため、「番号や部門名が古いまま」といったズレに
+ * 気づいたときに、最新の正しい内容で印刷用PDFだけを作り直すための機能。
+ * ダッシュボードから google.script.run 経由で呼ばれる。
+ */
+function reprintCO30ForLocation(fromLocation) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const templateSheet30 = ss.getSheetByName("CO30_Template");
+    // 🆕 別紙テンプレート。exportAllCO30Combinedと同じルールで、あれば49件/ページの別紙を使う。
+    const templateSheetSuppl = ss.getSheetByName(CO30_SUPPL_SHEET_NAME);
+    const inspSheet = ss.getSheetByName("CO30_Inspection");
+    if (!templateSheet30 || !inspSheet) {
+      return { success: false, message: "必要なシートが見つかりません。" };
+    }
+
+    // 現在のCO30_Inspectionから、この拠点の行をそのまま読み取る(番号などは一切再計算しない)
+    const values = inspSheet.getDataRange().getValues();
+    const flattenedLines = [];
+    const remarksSet = {};
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (String(row[0] || "").trim() !== fromLocation) continue;
+      const code = row[1] ? String(row[1]).trim() : "";
+      if (!code) continue;
+      const dept = row[8] ? String(row[8]).trim() : "";
+      const reqNo = row[9] ? String(row[9]).trim() : "";
+      const reqRef = reqNo;
+      const internalId = row[15] ? String(row[15]).trim() : ""; // 🆕 別紙の備考重複表示防止に使用
+      const requestNote = row[16] ? String(row[16]).trim() : "";
+      if (requestNote && dept) remarksSet[`【${dept}】${requestNote}`] = true;
+      flattenedLines.push({
+        code: code,
+        desc: row[2] ? String(row[2]).trim() : "",
+        lenderDest: row[10] ? String(row[10]).trim() : "",
+        reqRef: reqRef,
+        internalId: internalId,       // 🆕
+        requestNote: requestNote      // 🆕
+      });
+    }
+
+    if (flattenedLines.length === 0) {
+      return { success: false, message: `拠点「${fromLocation}」の物品がCO30_Inspectionに見つかりませんでした。` };
+    }
+
+    // 所有者情報(電話・住所)
+    const ownerSheetCandidates = ["Depot_Master", "Owner_Master"];
+    let ownerInfo = { phone: "", address: "" };
+    for (let s = 0; s < ownerSheetCandidates.length; s++) {
+      const sheet = ss.getSheetByName(ownerSheetCandidates[s]);
+      if (!sheet) continue;
+      const oData = sheet.getDataRange().getValues();
+      for (let i = 1; i < oData.length; i++) {
+        if (String(oData[i][0]).trim() === fromLocation) {
+          ownerInfo = { phone: oData[i][1] || "", address: oData[i][2] || "" };
+          break;
+        }
+      }
+    }
+
+    const truckingEmail = "2026trucking@gmail.com";
+    const token = ScriptApp.getOAuthToken();
+    const now = new Date();
+    const autoSignDate = Utilities.formatDate(now, "JST", "yyyy/MM/dd");
+    const autoSignTime = Utilities.formatDate(now, "JST", "HH:mm:ss");
+    const uniqueKeyBase = "REPRINT_" + Utilities.formatDate(now, "JST", "yyyyMMdd_HHmmss");
+    const linesPerPage = 5;
+
+    // 🆕 exportAllCO30Combinedと同じ分割ルール: 1ページ目はCO30_Template(5件)、
+    //    残りは別紙テンプレートがあればCO30_別紙_Template(49件/ページ)、無ければ本紙の繰り返し(5件/ページ)。
+    const mainCount = Math.min(flattenedLines.length, linesPerPage);
+    const remainingCount = flattenedLines.length - mainCount;
+    const useSuppl = remainingCount > 0 && !!templateSheetSuppl;
+    const remainderCapacity = useSuppl ? CO30_SUPPL_CAPACITY : linesPerPage;
+    const remainderPages = remainingCount > 0 ? Math.ceil(remainingCount / remainderCapacity) : 0;
+    const totalPages = 1 + remainderPages;
+    const mainPagesCount = useSuppl ? 1 : totalPages;
+
+    // ---- メインページ用の結合シート ----
+    const printMainSheet = ss.insertSheet(`PRINT_CO30_RP_${uniqueKeyBase}`);
+    if (printMainSheet.getMaxColumns() < 40) {
+      printMainSheet.insertColumnsAfter(printMainSheet.getMaxColumns(), 40 - printMainSheet.getMaxColumns());
+    }
+    for (let col = 1; col <= 40; col++) {
+      printMainSheet.setColumnWidth(col, templateSheet30.getColumnWidth(col));
+    }
+
+    // ---- 別紙用の結合シート(必要な場合のみ) ----
+    let printSupplSheet = null;
+    if (useSuppl) {
+      printSupplSheet = ss.insertSheet(`PRINT_CO30SUPPL_RP_${uniqueKeyBase}`);
+      const supplTemplateCols = templateSheetSuppl.getMaxColumns();
+      if (printSupplSheet.getMaxColumns() < supplTemplateCols) {
+        printSupplSheet.insertColumnsAfter(printSupplSheet.getMaxColumns(), supplTemplateCols - printSupplSheet.getMaxColumns());
+      }
+      for (let col = 1; col <= supplTemplateCols; col++) {
+        printSupplSheet.setColumnWidth(col, templateSheetSuppl.getColumnWidth(col));
+      }
+    }
+
+    let mainPageNumber = null;
+    let mainCursorRow = 1;
+    let supplCursorRow = 1;
+
+    for (let p = 0; p < totalPages; p++) {
+      const isLastPage = (p === totalPages - 1);
+
+      if (p === 0) {
+        // ---- 1ページ目: CO30_Template ----
+        const tempSheet30 = templateSheet30.copyTo(ss);
+        tempSheet30.setName(`TEMP_CO30_RP_P${p + 1}_${uniqueKeyBase}`);
+        if (tempSheet30.getMaxColumns() < 40) {
+          tempSheet30.insertColumnsAfter(tempSheet30.getMaxColumns(), 40 - tempSheet30.getMaxColumns());
+        }
+
+        mainPageNumber = nextCO30PageNumber_(fromLocation); // 再印刷でも通し番号は新規に進める
+
+        setCell_(tempSheet30, CO30_NUMBER_CELL, `${mainPageNumber}(再印刷)`, "@");
+        tempSheet30.getRange("D3").setNumberFormat("@").setValue(autoSignDate);
+        tempSheet30.getRange("E5").setValue(fromLocation);
+        tempSheet30.getRange("AF5").setNumberFormat("@").setValue(ownerInfo.phone);
+        tempSheet30.getRange("D7").setValue(ownerInfo.address);
+        tempSheet30.getRange("D22").setValue(Object.keys(remarksSet).join("\n") || "特になし");
+        tempSheet30.getRange("T31").setNumberFormat("@").setValue(`${p + 1} / ${totalPages}`);
+
+        for (let idx = 0; idx < mainCount; idx++) {
+          const lineData = flattenedLines[idx];
+          const rowNum = CO30_ITEM_ROWS[idx];
+          setCell_(tempSheet30, `${CO30_COL_TOOLNO}${rowNum}`, lineData.code);
+          setCell_(tempSheet30, `${CO30_COL_DESC}${rowNum}`, lineData.desc);
+          setCell_(tempSheet30, `${CO30_COL_LENDER}${rowNum}`, lineData.lenderDest || "");
+          setCell_(tempSheet30, `${CO30_COL_REQREF}${rowNum}`, lineData.reqRef || "");
+        }
+
+        SpreadsheetApp.flush();
+        const mainIsLastOfItsPdf = useSuppl ? true : isLastPage;
+        for (let r = 1; r <= 31; r++) {
+          printMainSheet.setRowHeight(mainCursorRow + r - 1, templateSheet30.getRowHeight(r));
+        }
+        if (!mainIsLastOfItsPdf) {
+          printMainSheet.setRowHeight(mainCursorRow + 31, 20);
+          printMainSheet.setRowHeight(mainCursorRow + 32, 20);
+        }
+        tempSheet30.getRange("A1:AN31").copyTo(printMainSheet.getRange(mainCursorRow, 1, 31, 40));
+        try { ss.deleteSheet(tempSheet30); } catch (e) {}
+        mainCursorRow += mainIsLastOfItsPdf ? 31 : 33;
+
+      } else if (useSuppl) {
+        // ---- 2ページ目以降(別紙テンプレートあり) ----
+        const tempSheetSuppl = templateSheetSuppl.copyTo(ss);
+        tempSheetSuppl.setName(`TEMP_CO30SUPPL_RP_P${p + 1}_${uniqueKeyBase}`);
+        const supplCols = tempSheetSuppl.getMaxColumns();
+
+        setCell_(tempSheetSuppl, CO30_SUPPL_NUMBER_CELL, mainPageNumber, "@");
+        tempSheetSuppl.getRange(CO30_SUPPL_DEPOT_CELL).setValue(fromLocation);
+        setCell_(tempSheetSuppl, CO30_SUPPL_PAGECOUNT_CELL, `${p + 1} / ${totalPages}`, "@");
+
+        const supplStartIdx = mainCount + (p - 1) * CO30_SUPPL_CAPACITY;
+        const supplEndIdx = Math.min(supplStartIdx + CO30_SUPPL_CAPACITY, flattenedLines.length);
+
+        let lastInternalId = null;
+        for (let idx = supplStartIdx; idx < supplEndIdx; idx++) {
+          const lineData = flattenedLines[idx];
+          const rowNum = CO30_SUPPL_ITEM_FIRST_ROW + (idx - supplStartIdx);
+          setCell_(tempSheetSuppl, `${CO30_SUPPL_COL_TOOLNO}${rowNum}`, lineData.code);
+          setCell_(tempSheetSuppl, `${CO30_SUPPL_COL_DESC}${rowNum}`, lineData.desc);
+          setCell_(tempSheetSuppl, `${CO30_SUPPL_COL_LENDER}${rowNum}`, lineData.lenderDest || "");
+          const showNote = lineData.internalId !== lastInternalId;
+          setCell_(tempSheetSuppl, `${CO30_SUPPL_COL_REMARKS}${rowNum}`, showNote ? (lineData.requestNote || "") : "");
+          setCell_(tempSheetSuppl, `${CO30_SUPPL_COL_REQREF}${rowNum}`, lineData.reqRef || "");
+          lastInternalId = lineData.internalId;
+        }
+
+        SpreadsheetApp.flush();
+        const supplSpan = CO30_SUPPL_PRINT_LAST_ROW;
+        for (let r = 1; r <= supplSpan; r++) {
+          printSupplSheet.setRowHeight(supplCursorRow + r - 1, tempSheetSuppl.getRowHeight(r));
+        }
+        if (!isLastPage) {
+          printSupplSheet.setRowHeight(supplCursorRow + supplSpan, 20);
+          printSupplSheet.setRowHeight(supplCursorRow + supplSpan + 1, 20);
+        }
+        tempSheetSuppl.getRange(1, 1, supplSpan, supplCols).copyTo(printSupplSheet.getRange(supplCursorRow, 1, supplSpan, supplCols));
+        try { ss.deleteSheet(tempSheetSuppl); } catch (e) {}
+        supplCursorRow += isLastPage ? supplSpan : (supplSpan + 2);
+
+      } else {
+        // ---- 2ページ目以降(別紙テンプレートが無い場合のフォールバック): 本紙の繰り返し ----
+        const tempSheet30 = templateSheet30.copyTo(ss);
+        tempSheet30.setName(`TEMP_CO30_RP_P${p + 1}_${uniqueKeyBase}`);
+        if (tempSheet30.getMaxColumns() < 40) {
+          tempSheet30.insertColumnsAfter(tempSheet30.getMaxColumns(), 40 - tempSheet30.getMaxColumns());
+        }
+
+        const pageNumber = nextCO30PageNumber_(fromLocation);
+        setCell_(tempSheet30, CO30_NUMBER_CELL, `${pageNumber}(再印刷)`, "@");
+        tempSheet30.getRange("D3").setNumberFormat("@").setValue(autoSignDate);
+        tempSheet30.getRange("E5").setValue(fromLocation);
+        tempSheet30.getRange("AF5").setNumberFormat("@").setValue(ownerInfo.phone);
+        tempSheet30.getRange("D7").setValue(ownerInfo.address);
+        tempSheet30.getRange("D22").setValue(Object.keys(remarksSet).join("\n") || "特になし");
+        tempSheet30.getRange("T31").setNumberFormat("@").setValue(`${p + 1} / ${totalPages}`);
+
+        const startIdx = mainCount + (p - 1) * linesPerPage;
+        const endIdx = Math.min(startIdx + linesPerPage, flattenedLines.length);
+        for (let idx = startIdx; idx < endIdx; idx++) {
+          const lineData = flattenedLines[idx];
+          const rowNum = CO30_ITEM_ROWS[idx - startIdx];
+          setCell_(tempSheet30, `${CO30_COL_TOOLNO}${rowNum}`, lineData.code);
+          setCell_(tempSheet30, `${CO30_COL_DESC}${rowNum}`, lineData.desc);
+          setCell_(tempSheet30, `${CO30_COL_LENDER}${rowNum}`, lineData.lenderDest || "");
+          setCell_(tempSheet30, `${CO30_COL_REQREF}${rowNum}`, lineData.reqRef || "");
+        }
+
+        SpreadsheetApp.flush();
+        for (let r = 1; r <= 31; r++) {
+          printMainSheet.setRowHeight(mainCursorRow + r - 1, templateSheet30.getRowHeight(r));
+        }
+        if (!isLastPage) {
+          printMainSheet.setRowHeight(mainCursorRow + 31, 20);
+          printMainSheet.setRowHeight(mainCursorRow + 32, 20);
+        }
+        tempSheet30.getRange("A1:AN31").copyTo(printMainSheet.getRange(mainCursorRow, 1, 31, 40));
+        try { ss.deleteSheet(tempSheet30); } catch (e) {}
+        mainCursorRow += isLastPage ? 31 : 33;
+      }
+    }
+
+    SpreadsheetApp.flush();
+
+    // ---- メインPDFを書き出す ----
+    const mainRowsCount = mainCursorRow - 1;
+    const urlMain = `${ss.getUrl().replace(/edit$/, '')}export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&gridlines=false&gid=${printMainSheet.getSheetId()}&r1=0&c1=0&r2=${mainRowsCount}&c2=39`;
+    const blobMain = UrlFetchApp.fetch(urlMain, { headers: { 'Authorization': `Bearer ${token}` } })
+      .getBlob().setName(`CO-30_再印刷_[${fromLocation}]_${autoSignDate} ${autoSignTime}(全${mainPagesCount}頁).pdf`);
+    try { ss.deleteSheet(printMainSheet); } catch (e) {}
+
+    // ---- 別紙PDFを書き出す(ある場合のみ) ----
+    let blobSuppl = null;
+    if (useSuppl) {
+      const supplRowsCount = supplCursorRow - 1;
+      const supplColsForExport = 5; // 🆕 用具番号/説明/貸出先/備考/依頼番号の5列固定。getLastColumn()は環境によって不安定なため直接指定する
+      const urlSuppl = `${ss.getUrl().replace(/edit$/, '')}export?exportFormat=pdf&format=pdf&size=A4&portrait=true&fitw=true&gridlines=false&gid=${printSupplSheet.getSheetId()}&r1=0&c1=0&r2=${supplRowsCount}&c2=${supplColsForExport}`;
+      blobSuppl = UrlFetchApp.fetch(urlSuppl, { headers: { 'Authorization': `Bearer ${token}` } })
+        .getBlob().setName(`CO-30_別紙_再印刷_[${fromLocation}]_${autoSignDate} ${autoSignTime}(全${remainderPages}頁).pdf`);
+      try { ss.deleteSheet(printSupplSheet); } catch (e) {}
+    }
+
+    try {
+      const printFolder = DriveApp.getFolderById(CO31_PRINT_FOLDER_ID);
+      removeOldCO30FilesForLocation_(printFolder, fromLocation); // 同じ拠点の古いCO-30(本紙・別紙とも)をゴミ箱へ
+      printFolder.createFile(blobMain.copyBlob());
+      if (blobSuppl) printFolder.createFile(blobSuppl.copyBlob());
+    } catch (driveErr) {
+      console.error("CO30再印刷のGoogle Drive保存に失敗しました: " + driveErr.message);
+    }
+
+    const supplNote = blobSuppl ? `\n\n※物品数が多いため、別紙(CO-30_別紙_再印刷_...)も別ファイルで添付しています。` : "";
+    sendMail_({
+      to: truckingEmail,
+      subject: `【再印刷】CO-30 用具受取書(拠点: ${fromLocation})`,
+      body: `運送・用具部門 担当者様\n\nダッシュボードから、拠点「${fromLocation}」のCO-30を最新のデータで再印刷しました。\n番号・検品状態など既存のデータは変更していません。古いPDFと差し替えてご利用ください。${supplNote}`,
+      attachments: blobSuppl ? [blobMain, blobSuppl] : [blobMain]
+    });
+
+    return { success: true, message: `✅ 拠点「${fromLocation}」のCO-30を再印刷し、メール送信・Driveへの保存を行いました。` };
+  } catch (err) {
+    return { success: false, message: "❌ 再印刷に失敗しました: " + err.message };
+  }
+}
+
+// =========================================================
+// メール承認フロー
+// =========================================================
+
+/**
+ * 🆕 Dept_Masterで「運送・用具部門」の行を"行ごと"に走査し、各行のD列(メール)・E列(氏名)を
+ * ペアで返す。以前は1セルにカンマ区切りで複数メールを入れていたが、
+ * 承認者ごとに行を分けて入力する方式に変更した。
+ * 例:
+ *   運送・用具部門 | ... | ... | tanaka@example.com | 田村裕
+ *   運送・用具部門 | ... | ... | gima@example.com    | 儀間悟
+ */
+function getApproversWithNames_() {
+  const fallback = [{ email: "2026trucking@gmail.com", name: "" }];
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Dept_Master");
+    if (!sheet) return fallback;
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 1) return fallback;
+    const values = sheet.getRange(1, 1, lastRow, 5).getValues(); // A〜E列
+
+    // 🆕 A列(部門名)が結合セルになっている場合、Apps Scriptは結合範囲の1行目にしか値を返さない。
+    //    2行目以降が見た目は「運送・用具部門」でも実際には空欄というケースに対応するため、
+    //    結合範囲の中では上のセルの値を引き継がせる。
+    const effectiveDeptA = values.map(function(r) { return String(r[0] || "").trim(); });
+    const mergedRanges = sheet.getRange(1, 1, lastRow, 1).getMergedRanges();
+    mergedRanges.forEach(function(mr) {
+      const topRow = mr.getRow();
+      const numRows = mr.getNumRows();
+      const anchorVal = effectiveDeptA[topRow - 1];
+      for (let r = topRow; r < topRow + numRows; r++) {
+        effectiveDeptA[r - 1] = anchorVal;
+      }
+    });
+
+    const list = [];
+    for (let i = 0; i < values.length; i++) {
+      if (effectiveDeptA[i] !== "運送・用具部門") continue;
+      const cellD = values[i][3] ? String(values[i][3]).trim() : "";
+      const cellE = values[i][4] ? String(values[i][4]).trim() : "";
+      if (!cellD) continue;
+      // 🆕 「1セルにカンマ区切りで複数メール」という旧形式が残っていても読めるようにする
+      const emails = cellD.split(",").map(function(e) { return e.trim(); }).filter(function(e) { return e.includes("@"); });
+      if (emails.length === 1) {
+        list.push({ email: emails[0], name: cellE });
+      } else if (emails.length > 1) {
+        // 旧形式(1セルに複数メール)の場合、氏名を個別に紐づけられないため空のまま登録する
+        emails.forEach(function(email) { list.push({ email: email, name: "" }); });
+      }
+    }
+    return list.length > 0 ? list : fallback;
+  } catch (e) {}
+  return fallback;
+}
+
+function getApprovers_() {
+  return getApproversWithNames_().map(function(a) { return a.email; });
+}
+
+/** 🆕 承認ボタンを押したアカウントのメールから、Dept_MasterのE列(氏名)を逆引きする(前後空白・大文字小文字ゆれを吸収) */
+function getApproverNameByEmail_(email) {
+  if (!email) return "";
+  const target = String(email).trim().toLowerCase();
+  const found = getApproversWithNames_().find(function(a) { return a.email.trim().toLowerCase() === target; });
+  return found ? found.name : "";
+}
+
+// 🆕 1グループ=1トークン: トークンは複数行(rowIds)を束ねて承認する。
+//    旧形式トークン({rowId: n})がScriptPropertiesに残っていても読めるよう、
+//    読み取り側は必ず tokenRowIds_() を通して行番号の配列を取り出すこと。
+function generateApprovalToken_(rowIds) {
+  const token = Utilities.getUuid().replace(/-/g, "");
+  PropertiesService.getScriptProperties().setProperty(
+    "appr_" + token,
+    JSON.stringify({ rowIds: rowIds, created: Date.now(), status: "pending" })
+  );
+  return token;
+}
+
+/** トークンデータから対象行番号の配列を取り出す(旧形式 {rowId} との後方互換) */
+function tokenRowIds_(data) {
+  if (data && data.rowIds && data.rowIds.length) return data.rowIds.map(function(r) { return Number(r); });
+  if (data && data.rowId) return [Number(data.rowId)];
+  return [];
+}
+
+function invalidateTokensForRow_(rowId) {
+  invalidateTokensForRows_([rowId]);
+}
+
+/**
+ * 🆕 複数行のトークンをまとめて無効化する。
+ * getKeys()+getProperty()をキーの数だけ呼ぶと通信回数が膨大になるため、
+ * getProperties()で一度に全件取得してからメモリ上で判定する。
+ */
+function invalidateTokensForRows_(rowIds) {
+  const props = PropertiesService.getScriptProperties();
+  const set = {};
+  (rowIds || []).forEach(function(r) { set[Number(r)] = true; });
+  if (Object.keys(set).length === 0) return;
+
+  let all = {};
+  try { all = props.getProperties(); } catch (e) { return; }
+
+  Object.keys(all).forEach(function(k) {
+    if (k.indexOf("co31copy_") === 0 || k.indexOf("co31print_") === 0) {
+      const n = Number(k.substring(k.indexOf("_") + 1));
+      if (set[n]) { try { props.deleteProperty(k); } catch (e) {} }
+      return;
+    }
+    if (k.indexOf("appr_") !== 0) return;
+    try {
+      const d = JSON.parse(all[k]);
+      if (d && d.status === "pending" && tokenRowIds_(d).some(function(r) { return set[r]; })) {
+        props.deleteProperty(k);
+      }
+    } catch (e) {}
+  });
+}
+
+/**
+ * 🆕 トークンを介さず、行番号配列を直接承認する共通コア処理。
+ * ダッシュボードからの一括承認で使う(メールリンク経由のapproveByToken_と処理内容は同じ)。
+ */
+function approveRowsDirect_(rows, approverEmail) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("CO31_Responses");
+  if (!sheet) return { success: false, message: "CO31_Responsesが見つかりません" };
+  if (!rows || rows.length === 0) return { success: false, message: "対象行がありません" };
+
+  const props = PropertiesService.getScriptProperties();
+  const approverDisplayName = getApproverNameByEmail_(approverEmail) || approverEmail || "運送部門担当者";
+
+  const targetRows = rows.filter(function(r) {
+    const status = String(sheet.getRange(r, 30).getValue() || "").trim();
+    return status !== "CO30作成待ち" && status !== "送信完了" && status !== "取消" && status !== "承認";
+  });
+  if (targetRows.length === 0) return { success: false, message: "承認待ちの行がありませんでした(既に処理済みの可能性があります)" };
+
+  // 🆕 ここでもPDF生成はせず、キューに任せる
+  let firstIid = "";
+  targetRows.forEach(function(r) {
+    const iid = assignInternalRequestId_(sheet, r);
+    if (!firstIid) firstIid = iid;
+    props.setProperty("apprby_id_" + iid, approverDisplayName);
+    sheet.getRange(r, 30).setValue("承認");
+    invalidateTokensForRow_(r);
+  });
+  if (firstIid) {
+    props.deleteProperty("apprfail_" + firstIid);
+    props.deleteProperty("apprnotified_" + firstIid);
+  }
+  scheduleApprovalWorker_(5000);
+
+  return {
+    success: true, processedCount: targetRows.length, failedCount: 0,
+    message: targetRows.length + "件を承認しました(控えは数分以内に送信されます)"
+  };
+}
+
+/**
+ * 🆕 ダッシュボードから複数の依頼グループをまとめて承認する。
+ * groupsRowsList: [[行番号,...], [行番号,...], ...] の配列。approverEmailは承認権限者のいずれか。
+ */
+function approvePendingGroupsFromDashboard(groupsRowsList, approverEmail) {
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(15 * 1000);
+  if (!gotLock) return { success: false, message: "⏳ 他の処理が実行中です。少し待ってからもう一度お試しください。" };
+  try {
+    if (!approverEmail) return { success: false, message: "承認者を選択してください。" };
+    const approvers = getApprovers_();
+    if (approvers.indexOf(approverEmail) === -1) return { success: false, message: "選択された承認者には承認権限がありません。" };
+
+    let totalProcessed = 0, totalFailed = 0, groupCount = 0, errorCount = 0;
+    (groupsRowsList || []).forEach(function(rows) {
+      const ids = (rows || []).map(function(r) { return parseInt(r, 10); }).filter(function(r) { return !isNaN(r) && r >= 2; });
+      if (ids.length === 0) return;
+      try {
+        const res = approveRowsDirect_(ids, approverEmail);
+        if (res.success) { groupCount++; totalProcessed += res.processedCount; totalFailed += res.failedCount; }
+        else { errorCount++; }
+      } catch (err) {
+        errorCount++;
+      }
+    });
+
+    return {
+      success: groupCount > 0,
+      message: `✅ ${groupCount}件の依頼を承認しました${totalFailed > 0 ? `(${totalFailed}ページで一部失敗)` : ""}${errorCount > 0 ? `、${errorCount}件は処理できませんでした` : ""}`
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 🆕 ダッシュボードの一括承認UIで使う承認者リスト(メール+氏名) */
+function getApproversForDashboard() {
+  return getApproversWithNames_();
+}
+
+/** Dept_MasterのB列から部門のメールアドレスを取得する */
+function getDeptEmail_(deptName) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Dept_Master");
+    if (!sheet) return "";
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      if (String(values[i][0]).trim() === String(deptName).trim()) {
+        const email = values[i][1] ? String(values[i][1]).trim() : "";
+        return email.includes("@") ? email : "";
+      }
+    }
+  } catch (e) {}
+  return "";
+}
+
+/**
+ * 🆕 重複依頼チェック。同じ部門から、同じ品名を含む依頼が既に出ていないか調べ、
+ * 見つかった場合だけメール本文に差し込む注意文言を返す(無ければ空文字)。
+ *
+ * 判定基準:
+ *   ・同じ依頼部門であること
+ *   ・品名が一致すること(前後の空白と大文字小文字の違いは無視)
+ *   ・ステータスが「取消」以外であること(承認待ち・承認済み・送信完了はすべて対象)
+ *   ・自分自身の依頼(同じ親依頼IDで束ねた全行)は当然除外する
+ * ※日付や配送先は見ていないため、別日・別場所への正当な依頼も候補に挙がる。
+ *   あくまで「確認を促す」ための文言であり、送信をブロックはしない。
+ */
+function buildDuplicateWarning_(deptName, itemNames, ownRows) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("CO31_Responses");
+    if (!sheet || sheet.getLastRow() < 2) return "";
+    const dept = String(deptName || "").trim();
+    if (!dept) return "";
+
+    const wanted = {};
+    (itemNames || []).forEach(function(n) {
+      const key = String(n || "").trim().toLowerCase();
+      if (key) wanted[key] = String(n).trim();
+    });
+    if (Object.keys(wanted).length === 0) return "";
+
+    const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, CO31_TOTAL_COLS).getValues();
+
+    // 自分自身の依頼は除外する。親依頼IDで束ねた兄弟行もまとめて除外(修正の再承認で誤検知しないように)
+    const ownSet = {};
+    (ownRows || []).forEach(function(r) { ownSet[Number(r)] = true; });
+    const ownGroupIds = {};
+    for (let i = 0; i < values.length; i++) {
+      if (!ownSet[i + 2]) continue;
+      const gid = String(values[i][CO31_COL_GROUPID_IDX] || "").trim();
+      if (gid) ownGroupIds[gid] = true;
+    }
+
+    const hits = {};
+    for (let i = 0; i < values.length; i++) {
+      const rowNum = i + 2;
+      const r = values[i];
+      if (ownSet[rowNum]) continue;
+      const gid = String(r[CO31_COL_GROUPID_IDX] || "").trim();
+      if (gid && ownGroupIds[gid]) continue;
+      if (String(r[4] || "").trim() !== dept) continue;
+      const status = String(r[29] || "").trim();
+      if (status === "取消") continue;
+
+      const dispNo = String(r[CO31_COL_DISPLAYPAGE_IDX] || "").trim() || "未採番";
+      collectItems_(r).forEach(function(it) {
+        const key = String(it.name || "").trim().toLowerCase();
+        if (!key || !wanted[key]) return;
+        if (!hits[key]) hits[key] = [];
+        const label = `No.${dispNo}(${status || "状態不明"})`;
+        if (hits[key].indexOf(label) === -1) hits[key].push(label);
+      });
+    }
+
+    const keys = Object.keys(hits);
+    if (keys.length === 0) return "";
+    const lines = keys.slice(0, 10).map(function(k) {
+      return `  ・${wanted[k]} … ${hits[k].slice(0, 5).join("、")}`;
+    });
+    return `
+━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ 重複の可能性はありませんか?
+同じ部門から、以下の品名を含む依頼が既に出ています。
+${lines.join("\n")}
+二重の手配になっていないかご確認ください。
+(搬入日や配送先が異なる別の依頼であれば問題ありません)
+━━━━━━━━━━━━━━━━━━━━━━━
+`;
+  } catch (e) {
+    return "";
+  }
+}
+
+// 🆕 1グループ=1トークン=1通: rowIds(このトークンで承認される全行)につき1回だけ呼ぶ。
+//    formData.itemsAll には全行分の品目を連結して渡すこと。
+function sendApprovalRequestEmail_(rowIds, formData, isEdit) {
+  const approvers = getApprovers_();
+  const token = generateApprovalToken_(rowIds);
+
+  const baseUrl = PropertiesService.getScriptProperties().getProperty("APPROVAL_BASE_URL")
+                  || ScriptApp.getService().getUrl();
+  const approvalUrl = baseUrl + "?action=approvalPage&token=" + token;
+
+  const dept = formData.deptName || "不明部門";
+  const fromLoc = formData.fromLocation || "";
+  const toLoc = formData.toLocation || "";
+  const arrival = (formData.arrivalDateStr || "") + " " + (formData.arrivalTimeStr || "");
+  const pageCount = rowIds.length;
+  const pageNote = pageCount > 1 ? `\n  ページ数 : 全${pageCount}ページ(1回の承認で全ページがまとめて承認されます)` : "";
+
+  let itemsText = "";
+  (formData.itemsAll || []).forEach(function(it) {
+    if (it.name || it.qty) itemsText += `  ・${it.name || "(品名なし)"} × ${it.qty || "?"}\n`;
+  });
+
+  // 🆕 重複依頼の注意文言(同一部門から同じ品名の依頼が既に出ている場合だけ本文に入る)
+  const dupNote = buildDuplicateWarning_(
+    dept,
+    (formData.itemsAll || []).map(function(it) { return it.name; }),
+    rowIds
+  );
+
+  const kind = isEdit ? "【修正の再承認依頼】" : "【CO-31 承認依頼】";
+  const body = `${kind}${dept}から配送依頼が届きました。
+${isEdit ? `\n⚠️ これは送信済み依頼の【修正版】です。内容を確認のうえ再承認してください。\n\n■ 今回変更された箇所\n${formData.changedSummary || "(変更箇所は検出されませんでした)"}\n` : ""}
+■ 依頼内容
+  依頼部門 : ${dept}
+  配送元   : ${fromLoc}
+  配送先   : ${toLoc}
+  搬入希望 : ${arrival.trim() || "未指定"}
+  担当者   : ${formData.contactInfo || "未記入"}${pageNote}
+
+■ 物品
+${itemsText || "  (記載なし)"}
+■ 特記事項: ${formData.totalNote || "なし"}
+■ 責任者氏名: ${formData.approver || "未記入"}
+${dupNote}
+━━━━━━━━━━━━━━━━━━━━━━━
+▼ 承認する場合は以下のリンクをタップしてください
+${approvalUrl}
+━━━━━━━━━━━━━━━━━━━━━━━
+
+※このリンクは1回限り有効です。
+※いずれか1名が承認した時点で他の方のリンクは無効になります。
+※このメールは承認者全員に送信されています。`;
+
+  // 🔒 承認依頼メール(承認リンク付き)は、運送・用具部門の承認者(Dept_Master D14:E15)だけに送る。
+  //    依頼部門(Dept_MasterのB列)には絶対に送らない ── 自分で承認できてしまうため。
+  //    依頼部門が受け取るのは、承認後に sendGroupCO31_ が送る控えメール(承認リンクなし)だけ。
+  const ccList = approvers.slice(1);
+
+  sendMail_({
+    to: approvers[0],
+    cc: ccList.join(","),
+    subject: `${isEdit ? "【承認依頼・CO-31 修正】" : "【承認依頼・CO-31】"}${dept}からの配送依頼${pageCount > 1 ? `(全${pageCount}ページ)` : ""}`,
+    body: body
+  });
+}
+
+function showApprovalPage_(token, userEmail) {
+  const props = PropertiesService.getScriptProperties();
+  const dataStr = props.getProperty("appr_" + token);
+
+  if (!dataStr) {
+    return buildSimplePage_("❌ リンクが無効です", "このリンクは存在しないか、すでに無効になっています。\n(依頼が修正された場合、古い承認リンクは無効になります)");
+  }
+  const data = JSON.parse(dataStr);
+
+  if (data.status === "approved") {
+    const approvedAt = data.approvedAt ? new Date(data.approvedAt).toLocaleString("ja-JP") : "不明";
+    return buildSimplePage_("✅ すでに承認済みです", `この依頼は ${approvedAt} に承認されました。`);
+  }
+  if (Date.now() - data.created > 7 * 24 * 60 * 60 * 1000) {
+    return buildSimplePage_("❌ リンクの有効期限切れ", "このリンクは期限(7日)を過ぎています。スプレッドシートから直接承認してください。");
+  }
+  if (userEmail) {
+    const approvers = getApprovers_();
+    if (!approvers.includes(userEmail)) {
+      return buildSimplePage_("❌ 承認権限がありません",

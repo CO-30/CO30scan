@@ -230,6 +230,18 @@ function switchTab(name) {
   if (name === 'docs' && printFolderFiles.length === 0) loadPrintFolderFiles();
 }
 
+  /* 追加: タイマー用の安全なヘルパー。
+   環境によっては裸の setTimeout が参照できないため、window/self/globalThis を順に試す。
+   どれも無ければ即時解決（fetchの往復が実質の間隔になる）。 */
+function delay(ms) {
+  return new Promise(function(resolve) {
+    if (typeof window !== 'undefined' && window.setTimeout) { window.setTimeout(resolve, ms); }
+    else if (typeof self !== 'undefined' && self.setTimeout) { self.setTimeout(resolve, ms); }
+    else if (typeof globalThis !== 'undefined' && globalThis.setTimeout) { globalThis.setTimeout(resolve, ms); }
+    else { resolve(); }
+  });
+}
+
 /* =========================================================
    CO30/CO31印刷センター
    ========================================================= */
@@ -406,8 +418,9 @@ function showMergeHint(msg) {
   if (!el) return;
   el.textContent = msg;
   el.style.display = 'inline';
-  clearTimeout(_mergeHintTimer);
-  _mergeHintTimer = setTimeout(function() { el.style.display = 'none'; }, 2600);
+  var w = (typeof window !== 'undefined') ? window : null;
+  if (w && w.clearTimeout && _mergeHintTimer) w.clearTimeout(_mergeHintTimer);
+  _mergeHintTimer = (w && w.setTimeout) ? w.setTimeout(function() { el.style.display = 'none'; }, 2600) : null;
 }
 
 function updateMergeButton(selectedTotal) {
@@ -471,27 +484,20 @@ async function mergeCheckedDocs() {
 }
 
 /** 結合完了までポーリング(約48秒でタイムアウト) */
-function pollMergedPdf(token) {
-  return new Promise(function(resolve) {
-    var tries = 0;
-    var maxTries = 40;
-    function tick() {
-      tries++;
+async function pollMergedPdf(token) {
+  var maxTries = 40; // 約48秒
+  for (var i = 0; i < maxTries; i++) {
+    if (i > 0) await delay(1200);
+    try {
       var u = new URL(GAS_API_URL);
       u.searchParams.set('action', 'getMergedPdf');
       u.searchParams.set('token', token);
-      fetch(u.toString()).then(function(r) { return r.json(); }).then(function(j) {
-        if (!j) { retry(); return; }
-        if (j.status === 'ready' || j.status === 'error') { resolve(j); return; }
-        retry();
-      }).catch(function() { retry(); });
-    }
-    function retry() {
-      if (tries >= maxTries) { resolve({ status: 'error', error: '時間内に結合が終わりませんでした(もう一度お試しください)' }); return; }
-      setTimeout(tick, 1200);
-    }
-    tick();
-  });
+      var r = await fetch(u.toString());
+      var j = await r.json();
+      if (j && (j.status === 'ready' || j.status === 'error')) return j;
+    } catch (e) { /* 一時的な通信失敗はそのままリトライ */ }
+  }
+  return { status: 'error', error: '時間内に結合が終わりませんでした(もう一度お試しください)' };
 }
 
 /** 拠点/部門プルダウンを検品データから作る(QRタブ・docsタブ共通で使う) */

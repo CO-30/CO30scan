@@ -16,6 +16,7 @@
     .filter-count { font-size: 12px; color: #888; margin-left: auto; }
     .btn-print { background: #2c5f8a; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 14px; font-weight: bold; cursor: pointer; }
     .btn-print:hover { background: #1d4566; }
+    .btn-print:disabled { background: #b8c4cf; cursor: not-allowed; }
     .status { text-align: center; padding: 40px 20px; font-size: 14px; color: #888; }
     .preview-area { padding: 20px; max-width: 960px; margin: 0 auto; }
 
@@ -77,7 +78,7 @@
     .label-name { font-size: 10px; color: #666; text-align: center; word-break: break-all; }
     @media print { .label-name { font-size: 7pt; } .grid-m .label-name { font-size: 10pt; } .grid-l .label-name { font-size: 14pt; } }
 
-    /* 🆕 印刷対象チェックボックス */
+    /* 印刷対象チェックボックス */
     .label-check-row { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #555; }
     .label-check-row input[type="checkbox"] { width: 14px; height: 14px; }
     .label-item.unchecked { opacity: 0.35; }
@@ -91,22 +92,25 @@
     .btn-bulk-check { background: #eef2f5; color: #444; border: 1px solid #dde3e9; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
     .btn-bulk-check:hover { background: #dde3e9; }
 
-    /* 🆕 タブ切り替え(QRラベル / CO30・CO31印刷) */
+    /* タブ切り替え(QRラベル / CO30・CO31印刷) */
     .tab-bar { display: flex; background: #fff; border-bottom: 1px solid #dde3e9; }
     .tab-btn { flex: 1; padding: 12px; text-align: center; font-size: 13px; font-weight: bold; color: #888; background: none; border: none; border-bottom: 3px solid transparent; cursor: pointer; }
     .tab-btn.active { color: #2c5f8a; border-bottom-color: #2c5f8a; }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
-    /* 🆕 印刷センター(CO30/CO31 PDF一覧) */
+    /* 印刷センター(CO30/CO31 PDF一覧) */
     .doc-list { max-width: 720px; margin: 20px auto; padding: 0 16px; }
     .doc-filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+    .doc-filter-bar select, .doc-filter-bar input[type="text"] { font: inherit; font-size: 13px; border: 1px solid #dde3e9; border-radius: 8px; padding: 6px 10px; background: #fff; }
+    .doc-filter-bar input[type="text"] { min-width: 160px; }
+    #merge-hint { font-size: 12px; color: #8a6d00; margin-left: 4px; display: none; }
     .doc-card {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
       background: #fff; border: 1px solid #dde3e9; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px;
     }
     .doc-card.doc-cancelled { border: 2px solid #ac3535; background: #fbe9e9; }
-    .doc-card.doc-unchecked { opacity: 0.4; }
+    .doc-card.doc-unchecked { opacity: 0.55; }
     .doc-name { font-size: 13px; font-weight: bold; color: #333; word-break: break-all; }
     .doc-meta { font-size: 11px; color: #888; margin-top: 2px; }
     .doc-kind-badge { font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
@@ -114,7 +118,7 @@
     .doc-kind-badge.k-co30 { background: #8e44ad; }
     .doc-kind-badge.k-other { background: #888; }
     .btn-doc-open { background: #2c5f8a; color: #fff; border: none; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: bold; cursor: pointer; white-space: nowrap; }
-    /* 🆕 一覧が上限で切り詰められている場合の警告 */
+    /* 一覧が上限で切り詰められている場合の警告 */
     .doc-limit-warning {
       background: #fff8e1; border: 1px solid #f0c96b; color: #8a6d00; font-size: 12.5px; font-weight: bold;
       border-radius: 8px; padding: 10px 14px; margin-bottom: 12px;
@@ -136,12 +140,13 @@
 <div class="tab-panel active" id="tab-panel-labels">
 <div class="filter-bar print-hide">
   <select id="f-location"><option value="">拠点: すべて</option></select>
+  <select id="f-dept"><option value="">部門: すべて</option></select>
   <select id="f-team">
     <option value="">担当TM: すべて</option>
     <option value="運送">🚛 運送TM</option>
     <option value="レンタル">🏢 レンタルTM</option>
   </select>
-  <input type="text" id="f-search" placeholder="🔍 物品コード・物品名で検索">
+  <input type="text" id="f-search" placeholder="🔍 物品コード・物品名・依頼番号で検索">
   <select id="bulk-size" title="表示中のラベルすべてのサイズを一括変更">
     <option value="">一括サイズ変更...</option>
     <option value="xs">すべて 極小(1cm)</option>
@@ -187,12 +192,14 @@
         <option value="CO31">CO31のみ</option>
         <option value="CO30">CO30のみ</option>
       </select>
-      <input type="text" id="doc-search" placeholder="🔍 ファイル名で検索">
+      <select id="doc-location"><option value="">拠点: すべて</option></select>
+      <select id="doc-dept"><option value="">部門: すべて</option></select>
+      <input type="text" id="doc-search" placeholder="🔍 ファイル名・依頼番号で検索">
       <button type="button" class="btn-bulk-check" onclick="loadPrintFolderFiles()">🔄 再読込</button>
-      <button type="button" class="btn-bulk-check" onclick="setAllDocsChecked(true)">☑ 全選択</button>
-      <button type="button" class="btn-bulk-check" onclick="setAllDocsChecked(false)">☐ 全解除</button>
+      <button type="button" class="btn-bulk-check" onclick="clearAllDocs()">☐ 全解除</button>
       <span class="filter-count" id="doc-filter-count"></span>
-      <button class="btn-print" onclick="openCheckedDocs()">📂 チェックした分だけ開く</button>
+      <span id="merge-hint"></span>
+      <button class="btn-print" id="btn-merge" onclick="mergeCheckedDocs()" disabled>🖨️ まとめて印刷（0/10）</button>
     </div>
     <div id="doc-list-body">
       <div class="status">⏳ このタブを開くと読み込みます</div>
@@ -202,15 +209,18 @@
 
 <script>
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxNEE_cTr3b_M3yyra5Qd3BON-FXkhPv7Qp22IGrkEEwQq7S8j7p6eWUdalxA-V_eeT/exec";
+const MERGE_MAX = 10; // まとめて印刷の一度の上限
+
 var allItems = [];
-var sizeByCode = {};    // code → 's' | 'm' | 'l'(選択はフィルター変更後も維持)
-var checkedByCode = {}; // 🆕 code → true/false(印刷対象かどうか。デフォルトtrue)
-var printFolderFiles = []; // 🆕 CO30/CO31印刷センター用のファイル一覧キャッシュ
-var printFolderFilesTotalCount = 0; // 🆕 サーバー側の全件数(表示件数が上限で切り詰められていないか判定するため)
-var docCheckedByUrl = {}; // 🆕 ファイル名 → 選択状態(デフォルトtrue、取消済みはfalse)
+var sizeByCode = {};    // code → 'xs'|'s'|'m'|'l'
+var checkedByCode = {}; // code → true/false(QRラベルの印刷対象。デフォルトtrue、取消済みはfalse)
+var printFolderFiles = []; // CO30/CO31印刷センター用のファイル一覧キャッシュ
+var printFolderFilesTotalCount = 0;
+var docCheckedById = {}; // ファイルID → 選択状態(まとめて印刷。空スタート＝既定false)
+var mergeBusy = false;   // まとめて印刷の実行中フラグ
 
 /* =========================================================
-   🆕 タブ切り替え
+   タブ切り替え
    ========================================================= */
 function switchTab(name) {
   document.getElementById('tab-btn-labels').classList.toggle('active', name === 'labels');
@@ -221,18 +231,17 @@ function switchTab(name) {
 }
 
 /* =========================================================
-   🆕 CO30/CO31印刷センター
+   CO30/CO31印刷センター
    ========================================================= */
 async function loadPrintFolderFiles() {
   var body = document.getElementById('doc-list-body');
   body.innerHTML = '<div class="status">⏳ 読み込み中...</div>';
+  docCheckedById = {}; // 🆕 再読込のたびに選択をリセット(空スタート)
   try {
     var u = new URL(GAS_API_URL);
     u.searchParams.set('action', 'listPrintFolderFiles');
     var res = await fetch(u.toString());
     var json = await res.json();
-    // 🆕 success:falseや不明なアクション応答の場合は、空扱いにせずエラーとしてはっきり表示する
-    // (デプロイが更新されていないと action が認識されず、このパターンになる)
     if (!json || json.success !== true) {
       var msg = (json && json.error) ? json.error : '不明な応答';
       body.innerHTML = '<div class="status">❌ 読み込みに失敗しました: ' + escapeHtmlDoc(msg) +
@@ -240,11 +249,12 @@ async function loadPrintFolderFiles() {
       printFolderFiles = [];
       printFolderFilesTotalCount = 0;
       renderDocLimitWarning();
+      updateMergeButton();
       return;
     }
     printFolderFiles = json.files || [];
-    // 🆕 totalCountが無い(=旧デプロイのまま)場合は、表示件数=全件数とみなす(警告を誤って出さないため)
     printFolderFilesTotalCount = (typeof json.totalCount === 'number') ? json.totalCount : printFolderFiles.length;
+    buildDocFilterOptions(); // 🆕 拠点/部門プルダウンを(データが来ていれば)最新化
     renderDocLimitWarning();
     renderDocList();
   } catch (err) {
@@ -252,7 +262,7 @@ async function loadPrintFolderFiles() {
   }
 }
 
-/** 🆕 サーバー側の上限(現在500件)で一覧が切り詰められている場合に警告バナーを出す */
+/** サーバー側の上限(現在500件)で一覧が切り詰められている場合に警告バナーを出す */
 function renderDocLimitWarning() {
   var host = document.getElementById('doc-limit-warning-host');
   if (printFolderFilesTotalCount > printFolderFiles.length) {
@@ -264,19 +274,65 @@ function renderDocLimitWarning() {
   }
 }
 
-function renderDocList() {
-  var body = document.getElementById('doc-list-body');
-  var kindFilter = document.getElementById('doc-kind-filter').value;
-  var search = document.getElementById('doc-search').value.trim().toLowerCase();
+/** 🆕 検品データ(allItems)から「依頼番号→拠点」「部門→拠点の集合」を作る。
+ *  CO-31は部門で直接絞る／CO-30は「その部門の物品を含む拠点」を出すために使う。 */
+function buildDocMaps() {
+  var reqNoToLoc = {}, deptToLocs = {};
+  allItems.forEach(function(it) {
+    if (it.reqNo && it.location && !reqNoToLoc[it.reqNo]) reqNoToLoc[it.reqNo] = it.location;
+    if (it.dept && it.location) {
+      if (!deptToLocs[it.dept]) deptToLocs[it.dept] = {};
+      deptToLocs[it.dept][it.location] = true;
+    }
+  });
+  return { reqNoToLoc: reqNoToLoc, deptToLocs: deptToLocs };
+}
 
-  var filtered = printFolderFiles.filter(function(f) {
-    if (kindFilter && f.kind !== kindFilter) return false;
-    if (search && f.name.toLowerCase().indexOf(search) < 0) return false;
+function getFilteredDocs() {
+  var kind   = document.getElementById('doc-kind-filter').value;
+  var loc    = document.getElementById('doc-location').value;
+  var dept   = document.getElementById('doc-dept').value;
+  var search = document.getElementById('doc-search').value.trim().toLowerCase();
+  var maps = buildDocMaps();
+
+  return printFolderFiles.filter(function(f) {
+    if (kind && f.kind !== kind) return false;
+
+    // 拠点フィルター: CO-30はファイル名の拠点、CO-31は依頼番号→拠点で判定
+    if (loc) {
+      var fileLoc = (f.kind === 'CO30') ? f.location : (f.reqNo ? maps.reqNoToLoc[f.reqNo] : '');
+      if (fileLoc !== loc) return false;
+    }
+
+    // 部門フィルター: CO-31は部門で直接、CO-30は「その部門の物品を含む拠点」なら表示
+    if (dept) {
+      if (f.kind === 'CO31') {
+        if (f.dept !== dept) return false;
+      } else if (f.kind === 'CO30') {
+        var locsForDept = maps.deptToLocs[dept] || {};
+        if (!f.location || !locsForDept[f.location]) return false;
+      } else {
+        return false; // その他は部門で絞れないので、部門指定時は隠す
+      }
+    }
+
+    // 検索(ファイル名 または 依頼番号)
+    if (search) {
+      var hay = (f.name + ' ' + (f.reqNo || '')).toLowerCase();
+      if (hay.indexOf(search) < 0) return false;
+    }
     return true;
   });
+}
 
-  var checkedCount = filtered.filter(function(f) { return docCheckedByUrl[f.url] !== false; }).length;
-  document.getElementById('doc-filter-count').textContent = checkedCount + ' / ' + filtered.length + ' 件(選択中/表示中)';
+function renderDocList() {
+  var body = document.getElementById('doc-list-body');
+  var filtered = getFilteredDocs();
+
+  var selectedTotal = countSelectedDocs();
+  var shownSelected = filtered.filter(function(f) { return docCheckedById[f.id]; }).length;
+  document.getElementById('doc-filter-count').textContent = shownSelected + ' / ' + filtered.length + ' 件(選択/表示)';
+  updateMergeButton(selectedTotal);
 
   if (filtered.length === 0) {
     body.innerHTML = '<div class="status">該当するファイルがありません</div>';
@@ -284,53 +340,186 @@ function renderDocList() {
   }
 
   body.innerHTML = filtered.map(function(f) {
-    // 🆕 未設定の場合、取消済みはデフォルト未選択・それ以外はデフォルト選択
-    if (docCheckedByUrl[f.url] === undefined) docCheckedByUrl[f.url] = !f.cancelled;
-    var isChecked = docCheckedByUrl[f.url];
-
+    var isChecked = !!docCheckedById[f.id];
     var badgeCls = f.kind === 'CO31' ? 'k-co31' : f.kind === 'CO30' ? 'k-co30' : 'k-other';
     var dateStr = f.createdAt ? new Date(f.createdAt).toLocaleString('ja-JP') : '';
     var cancelledBadge = f.cancelled ? '<span class="doc-kind-badge" style="background:#ac3535;">⚠️ 取消済み</span> ' : '';
-    var safeUrl = escapeHtmlDoc(f.url).replace(/'/g, "\\'"); // 🆕 チェック状態のキーはファイル名ではなくURL(一意)を使う
+
+    // 拠点/部門/依頼番号をメタ行に添える(絞り込みの手がかり)
+    var sub = [];
+    if (f.kind === 'CO30' && f.location) sub.push('拠点: ' + f.location);
+    if (f.kind === 'CO31' && f.dept) sub.push('部門: ' + f.dept);
+    if (f.reqNo) sub.push('No.' + f.reqNo);
+    var subText = sub.length ? escapeHtmlDoc(sub.join(' ・ ')) + ' ／ ' : '';
+
     return '<div class="doc-card' + (f.cancelled ? ' doc-cancelled' : '') + (isChecked ? '' : ' doc-unchecked') + '">' +
       '<label class="label-check-row" style="margin-right:4px;">' +
-        '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' onchange="toggleDocChecked(\'' + safeUrl + '\', this.checked)">' +
+        '<input type="checkbox" class="doc-check" data-id="' + escapeHtmlDoc(f.id) + '" ' + (isChecked ? 'checked' : '') + '>' +
       '</label>' +
       '<div style="flex:1;">' +
         cancelledBadge +
-        '<span class="doc-kind-badge ' + badgeCls + '">' + f.kind + '</span> ' +
+        '<span class="doc-kind-badge ' + badgeCls + '">' + escapeHtmlDoc(f.kind) + '</span> ' +
         '<div class="doc-name">' + escapeHtmlDoc(f.name) + '</div>' +
-        '<div class="doc-meta">' + dateStr + '</div>' +
+        '<div class="doc-meta">' + subText + escapeHtmlDoc(dateStr) + '</div>' +
       '</div>' +
-      '<button class="btn-doc-open" onclick="window.open(\'' + f.url + '\', \'_blank\')">開いて印刷</button>' +
+      '<button class="btn-doc-open" data-open-id="' + escapeHtmlDoc(f.id) + '">開いて印刷</button>' +
     '</div>';
   }).join('');
 }
 
-function toggleDocChecked(url, checked) {
-  docCheckedByUrl[url] = checked;
+function findDocById(id) {
+  for (var i = 0; i < printFolderFiles.length; i++) {
+    if (printFolderFiles[i].id === id) return printFolderFiles[i];
+  }
+  return null;
+}
+
+function countSelectedDocs() {
+  var n = 0;
+  Object.keys(docCheckedById).forEach(function(k) { if (docCheckedById[k]) n++; });
+  return n;
+}
+
+/** チェック切り替え(10件の上限をやんわり適用) */
+function toggleDocChecked(id, checked, cbEl) {
+  if (checked) {
+    if (countSelectedDocs() >= MERGE_MAX) {
+      if (cbEl) cbEl.checked = false; // やんわり戻す
+      showMergeHint('まとめて印刷は最大' + MERGE_MAX + '件までです');
+      return;
+    }
+    docCheckedById[id] = true;
+  } else {
+    docCheckedById[id] = false;
+  }
   renderDocList();
 }
 
-function setAllDocsChecked(value) {
-  var kindFilter = document.getElementById('doc-kind-filter').value;
-  var search = document.getElementById('doc-search').value.trim().toLowerCase();
-  printFolderFiles.filter(function(f) {
-    if (kindFilter && f.kind !== kindFilter) return false;
-    if (search && f.name.toLowerCase().indexOf(search) < 0) return false;
-    return true;
-  }).forEach(function(f) { docCheckedByUrl[f.url] = value; });
+function clearAllDocs() {
+  docCheckedById = {};
   renderDocList();
 }
 
-/** 🆕 チェックが入っているPDFをまとめて新しいタブで開く(ポップアップブロック対策として少し間隔をあける) */
-function openCheckedDocs() {
-  var targets = printFolderFiles.filter(function(f) { return docCheckedByUrl[f.url] !== false; });
-  if (targets.length === 0) { alert('チェックされているファイルがありません。'); return; }
-  if (targets.length > 8 && !confirm(targets.length + '件のファイルを開きます。ブラウザのポップアップ許可が必要な場合があります。続けますか？')) return;
-  targets.forEach(function(f, i) {
-    setTimeout(function() { window.open(f.url, '_blank'); }, i * 350);
+var _mergeHintTimer = null;
+function showMergeHint(msg) {
+  var el = document.getElementById('merge-hint');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'inline';
+  clearTimeout(_mergeHintTimer);
+  _mergeHintTimer = setTimeout(function() { el.style.display = 'none'; }, 2600);
+}
+
+function updateMergeButton(selectedTotal) {
+  if (typeof selectedTotal !== 'number') selectedTotal = countSelectedDocs();
+  var btn = document.getElementById('btn-merge');
+  if (!btn) return;
+  btn.textContent = '🖨️ まとめて印刷（' + selectedTotal + '/' + MERGE_MAX + '）';
+  btn.disabled = (selectedTotal === 0) || mergeBusy;
+}
+
+/** 選択したPDFをサーバーで1つに結合し、できあがりを1回だけ開く */
+async function mergeCheckedDocs() {
+  if (mergeBusy) return;
+  var ids = [];
+  printFolderFiles.forEach(function(f) { if (docCheckedById[f.id]) ids.push(f.id); });
+  if (ids.length === 0) return;
+  if (ids.length > MERGE_MAX) { showMergeHint('最大' + MERGE_MAX + '件までです'); return; }
+
+  // ポップアップブロック対策: クリックの流れの中で先に空タブを開いておく
+  var win = window.open('about:blank', '_blank');
+  if (win) {
+    try { win.document.write('<!doctype html><meta charset="utf-8"><title>まとめて印刷</title><body style="font-family:-apple-system,sans-serif;padding:40px;color:#333;">📄 PDFを結合しています。しばらくお待ちください…</body>'); } catch (e) {}
+  }
+
+  mergeBusy = true;
+  updateMergeButton();
+  showMergeHint('結合中…(数秒かかります)');
+
+  var token = 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  try {
+    var startUrl = new URL(GAS_API_URL);
+    startUrl.searchParams.set('action', 'mergePrintPdfs');
+    startUrl.searchParams.set('token', token);
+    startUrl.searchParams.set('ids', ids.join(','));
+    var startRes = await fetch(startUrl.toString());
+    var startJson = await startRes.json();
+    if (!startJson || startJson.success !== true) {
+      throw new Error(startJson && startJson.error ? startJson.error : '結合の開始に失敗しました');
+    }
+
+    var result = await pollMergedPdf(token);
+    if (result.status === 'ready') {
+      if (win) { win.location.href = result.url; }
+      else { window.open(result.url, '_blank'); }
+      var msg = '✅ 結合できました。';
+      if (result.skipped && result.skipped.length > 0) msg += '(' + result.skipped.length + '件は開けなかったため除外)';
+      showMergeHint(msg);
+    } else {
+      if (win) { try { win.close(); } catch (e) {} }
+      showMergeHint('❌ ' + (result.error || '結合に失敗しました'));
+      alert('まとめて印刷に失敗しました: ' + (result.error || '不明なエラー'));
+    }
+  } catch (err) {
+    if (win) { try { win.close(); } catch (e) {} }
+    showMergeHint('❌ ' + err.message);
+    alert('まとめて印刷に失敗しました: ' + err.message);
+  } finally {
+    mergeBusy = false;
+    updateMergeButton();
+  }
+}
+
+/** 結合完了までポーリング(約48秒でタイムアウト) */
+function pollMergedPdf(token) {
+  return new Promise(function(resolve) {
+    var tries = 0;
+    var maxTries = 40;
+    function tick() {
+      tries++;
+      var u = new URL(GAS_API_URL);
+      u.searchParams.set('action', 'getMergedPdf');
+      u.searchParams.set('token', token);
+      fetch(u.toString()).then(function(r) { return r.json(); }).then(function(j) {
+        if (!j) { retry(); return; }
+        if (j.status === 'ready' || j.status === 'error') { resolve(j); return; }
+        retry();
+      }).catch(function() { retry(); });
+    }
+    function retry() {
+      if (tries >= maxTries) { resolve({ status: 'error', error: '時間内に結合が終わりませんでした(もう一度お試しください)' }); return; }
+      setTimeout(tick, 1200);
+    }
+    tick();
   });
+}
+
+/** 拠点/部門プルダウンを検品データから作る(QRタブ・docsタブ共通で使う) */
+function buildDocFilterOptions() {
+  var locs = [], depts = [];
+  allItems.forEach(function(i) {
+    if (i.location && locs.indexOf(i.location) < 0) locs.push(i.location);
+    if (i.dept && depts.indexOf(i.dept) < 0) depts.push(i.dept);
+  });
+  locs.sort(); depts.sort();
+  fillFilterSelect('doc-location', locs, '拠点: ', '拠点: すべて');
+  fillFilterSelect('doc-dept', depts, '部門: ', '部門: すべて');
+}
+
+function fillFilterSelect(id, values, prefix, allLabel) {
+  var sel = document.getElementById(id);
+  if (!sel) return;
+  var cur = sel.value;
+  sel.innerHTML = '';
+  var optAll = document.createElement('option');
+  optAll.value = ''; optAll.textContent = allLabel;
+  sel.appendChild(optAll);
+  values.forEach(function(v) {
+    var o = document.createElement('option');
+    o.value = v; o.textContent = prefix + v;
+    sel.appendChild(o);
+  });
+  if (cur) sel.value = cur;
 }
 
 function escapeHtmlDoc(s) {
@@ -339,8 +528,24 @@ function escapeHtmlDoc(s) {
   });
 }
 
+// docsタブのフィルター操作
 document.getElementById('doc-kind-filter').addEventListener('change', renderDocList);
+document.getElementById('doc-location').addEventListener('change', renderDocList);
+document.getElementById('doc-dept').addEventListener('change', renderDocList);
 document.getElementById('doc-search').addEventListener('input', renderDocList);
+
+// docsタブ: チェックボックス・「開いて印刷」を委譲で受ける(f.url等をHTMLに直書きせず安全に)
+document.getElementById('doc-list-body').addEventListener('change', function(e) {
+  var cb = e.target.closest ? e.target.closest('.doc-check') : null;
+  if (!cb) return;
+  toggleDocChecked(cb.getAttribute('data-id'), cb.checked, cb);
+});
+document.getElementById('doc-list-body').addEventListener('click', function(e) {
+  var btn = e.target.closest ? e.target.closest('[data-open-id]') : null;
+  if (!btn) return;
+  var f = findDocById(btn.getAttribute('data-open-id'));
+  if (f) window.open(f.url, '_blank');
+});
 
 /* =========================================================
    ① データ取得
@@ -360,7 +565,8 @@ async function loadData() {
       if (seen.has(item.code)) return false;
       seen.add(item.code); return true;
     });
-    buildLocationOptions();
+    buildFilterOptions();     // QRタブの拠点・部門
+    buildDocFilterOptions();  // docsタブの拠点・部門
     render();
   } catch(err) {
     document.getElementById('status').innerHTML = '❌ データ取得エラー: ' + err.message +
@@ -368,34 +574,39 @@ async function loadData() {
   }
 }
 
-function buildLocationOptions() {
-  var locs = [];
-  allItems.forEach(function(i) { if (i.location && locs.indexOf(i.location) < 0) locs.push(i.location); });
-  locs.sort();
-  var sel = document.getElementById('f-location');
-  locs.forEach(function(loc) {
-    var opt = document.createElement('option');
-    opt.value = loc; opt.textContent = '拠点: ' + loc;
-    sel.appendChild(opt);
+/** QRタブの拠点・部門プルダウン */
+function buildFilterOptions() {
+  var locs = [], depts = [];
+  allItems.forEach(function(i) {
+    if (i.location && locs.indexOf(i.location) < 0) locs.push(i.location);
+    if (i.dept && depts.indexOf(i.dept) < 0) depts.push(i.dept);
   });
+  locs.sort(); depts.sort();
+  fillFilterSelect('f-location', locs, '拠点: ', '拠点: すべて');
+  fillFilterSelect('f-dept', depts, '部門: ', '部門: すべて');
 }
 
 function getFiltered() {
   var loc    = document.getElementById('f-location').value;
+  var dept   = document.getElementById('f-dept').value;
   var team   = document.getElementById('f-team').value;
   var search = document.getElementById('f-search').value.trim().toLowerCase();
   return allItems.filter(function(item) {
     if (loc    && item.location !== loc)  return false;
+    if (dept   && item.dept    !== dept)  return false;
     if (team   && item.team    !== team)  return false;
-    if (search) { var hay = (item.code + ' ' + item.name).toLowerCase(); if (hay.indexOf(search) < 0) return false; }
+    if (search) {
+      var hay = (item.code + ' ' + item.name + ' ' + (item.reqNo || '')).toLowerCase();
+      if (hay.indexOf(search) < 0) return false;
+    }
     return true;
   });
 }
 
 /* =========================================================
-   ② ラベル描画(サイズごとに3セクションへ振り分け)
+   ② ラベル描画(サイズごとに4セクションへ振り分け)
    ========================================================= */
-var QR_PX = { xs: 100, s: 200, m: 400, l: 800 }; // サイズに応じた解像度でQR画像を取得
+var QR_PX = { xs: 100, s: 200, m: 400, l: 800 };
 
 function render() {
   var items = getFiltered();
@@ -420,7 +631,6 @@ function render() {
   items.forEach(function(item) {
     var size = sizeByCode[item.code] || 's';
     counts[size]++;
-    // 🆕 取消済みの物品はデフォルトで印刷チェックを外す(誤印刷防止)
     if (checkedByCode[item.code] === undefined) checkedByCode[item.code] = !item.cancelled;
 
     var div = document.createElement('div');
@@ -460,7 +670,6 @@ function render() {
     name.textContent = item.name || '';
     div.appendChild(name);
 
-    // 🆕 印刷対象チェックボックス(印刷には出ない。チェックを外すとプレビューも薄くなり、印刷対象からも外れる)
     var checkRow = document.createElement('label');
     checkRow.className = 'label-check-row print-hide';
     var checkbox = document.createElement('input');
@@ -474,7 +683,6 @@ function render() {
     checkRow.appendChild(document.createTextNode('印刷する'));
     div.appendChild(checkRow);
 
-    // 🆕 ラベルごとのサイズ選択(印刷には出ない)
     var sel = document.createElement('select');
     sel.className = 'size-select print-hide';
     [['xs', '極小 1cm'], ['s', '小 2cm'], ['m', '中 4.5cm'], ['l', '大 A4半分']].forEach(function(pair) {
@@ -492,7 +700,6 @@ function render() {
     grids[size].appendChild(div);
   });
 
-  // 空のセクションは非表示(印刷時の空白ページ防止)
   document.getElementById('section-xs').style.display = counts.xs ? 'block' : 'none';
   document.getElementById('section-s').style.display = counts.s ? 'block' : 'none';
   document.getElementById('section-m').style.display = counts.m ? 'block' : 'none';
@@ -500,16 +707,17 @@ function render() {
 }
 
 document.getElementById('f-location').addEventListener('change', render);
+document.getElementById('f-dept').addEventListener('change', render);
 document.getElementById('f-team').addEventListener('change', render);
 document.getElementById('f-search').addEventListener('input', render);
 
-/* 🆕 全選択/全解除(現在のフィルターに表示中のものだけ対象) */
+/* 全選択/全解除(現在のフィルターに表示中のものだけ対象) */
 function setAllChecked(value) {
   getFiltered().forEach(function(item) { checkedByCode[item.code] = value; });
   render();
 }
 
-/* 🆕 一括サイズ変更(表示中のラベルに適用) */
+/* 一括サイズ変更(表示中のラベルに適用) */
 document.getElementById('bulk-size').addEventListener('change', function() {
   var v = this.value;
   if (!v) return;

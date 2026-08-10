@@ -230,18 +230,6 @@ function switchTab(name) {
   if (name === 'docs' && printFolderFiles.length === 0) loadPrintFolderFiles();
 }
 
-  /* 追加: タイマー用の安全なヘルパー。
-   環境によっては裸の setTimeout が参照できないため、window/self/globalThis を順に試す。
-   どれも無ければ即時解決（fetchの往復が実質の間隔になる）。 */
-function delay(ms) {
-  return new Promise(function(resolve) {
-    if (typeof window !== 'undefined' && window.setTimeout) { window.setTimeout(resolve, ms); }
-    else if (typeof self !== 'undefined' && self.setTimeout) { self.setTimeout(resolve, ms); }
-    else if (typeof globalThis !== 'undefined' && globalThis.setTimeout) { globalThis.setTimeout(resolve, ms); }
-    else { resolve(); }
-  });
-}
-
 /* =========================================================
    CO30/CO31印刷センター
    ========================================================= */
@@ -413,6 +401,17 @@ function clearAllDocs() {
 }
 
 var _mergeHintTimer = null;
+
+/* タイマー用の安全なヘルパー（環境によっては裸の setTimeout が参照できないため window/self/globalThis を試す。無ければ即時解決） */
+function delay(ms) {
+  return new Promise(function(resolve) {
+    if (typeof window !== 'undefined' && window.setTimeout) { window.setTimeout(resolve, ms); }
+    else if (typeof self !== 'undefined' && self.setTimeout) { self.setTimeout(resolve, ms); }
+    else if (typeof globalThis !== 'undefined' && globalThis.setTimeout) { globalThis.setTimeout(resolve, ms); }
+    else { resolve(); }
+  });
+}
+
 function showMergeHint(msg) {
   var el = document.getElementById('merge-hint');
   if (!el) return;
@@ -483,9 +482,9 @@ async function mergeCheckedDocs() {
   }
 }
 
-/** 結合完了までポーリング(約48秒でタイムアウト) */
+/** 結合完了までポーリング(約48秒でタイムアウト。setTimeout非依存) */
 async function pollMergedPdf(token) {
-  var maxTries = 40; // 約48秒
+  var maxTries = 40;
   for (var i = 0; i < maxTries; i++) {
     if (i > 0) await delay(1200);
     try {

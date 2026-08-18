@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>工程ボード v35（モック） 2026宜野湾大会</title>
+<title>工程ボード v37（モック） 2026宜野湾大会</title>
 <style>
   :root{
     --ink:#16222E; --ink-soft:#43566A; --canvas:#EDEEE9; --panel:#1D2C3A;
@@ -390,6 +390,10 @@
   .tmsel button{border:1px solid var(--rule);background:#fff;border-radius:11px;padding:3px 9px;
     font-size:11px;cursor:pointer;color:var(--ink-soft)}
   .tmsel button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+  #dataState[data-state="live"]{background:#23543C;border-color:#2E7D4F}
+  #dataState[data-state="ng"]{background:var(--alert);border-color:var(--alert);font-weight:700}
+  .ta{width:100%;height:180px;border:1px solid var(--rule-strong);border-radius:3px;padding:8px;
+    font-family:var(--font-mono);font-size:11px}
   .pk .ln .max{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-soft);width:44px;text-align:right}
   .mani{font-size:11.5px}
   .onb{border:1px solid #9CC0AC;background:#F1F7F3;border-radius:var(--radius);padding:8px 10px;
@@ -428,7 +432,7 @@
 <body>
 
 <div class="top">
-  <div class="brand"><b>工程ボード</b><span>2026宜野湾大会 / MOCK v35</span></div>
+  <div class="brand"><b>工程ボード</b><span>2026宜野湾大会 / LIVE v37</span></div>
   <div class="days" id="days"></div>
   <div class="days" id="tmfilter"></div>
   <div class="days" id="views">
@@ -443,6 +447,8 @@
   <div class="flag" id="flag2">移動不足 0件</div>
   <div class="flag" id="flag3">足が未定 0件</div>
   <div class="flag" id="flag4">定員オーバー 0件</div>
+  <div class="tool"><button id="btnLoad" title="CO-31と名簿を読み込む">⟳ 取込</button></div>
+  <div class="flag" id="dataState">サンプル表示中</div>
 </div>
 
 <div id="multibar"><span id="mb-n">0件選択中</span><button class="del" id="mb-del">まとめて消す</button><button id="mb-clr">選択をやめる</button></div>
@@ -454,7 +460,7 @@
 
   <div class="rails">
     <div class="rail">
-      <h2><i class="tag do"></i>② 何を<span class="h-note" id="doCount"></span><button id="co31Reload" type="button" title="CO-31を読み直す" style="margin-left:8px;font-size:11px;line-height:1;padding:3px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;color:#334155;cursor:pointer">🔄 CO-31</button></h2>
+      <h2><i class="tag do"></i>② 何を<span class="h-note" id="doCount"></span></h2>
       <div class="chips" id="doList"></div>
     </div>
     <div class="rail">
@@ -488,7 +494,7 @@
 <script>
 "use strict";
 /* ============================================================
-   工程ボード v35（モック）
+   工程ボード v37（モック）
    用語   : ②=WHAT(何を) / ③=DO(やること) / ④=WHO(だれが) / ⑤=タイムライン
    時間軸 : 8/26〜8/31を1本につないだ連続タイムライン。右へ行けば翌日へ続く
    ④判定 : ブロックを選ぶ／人をブロックへ運ぶと、入れない人が④で赤くなる
@@ -855,7 +861,11 @@ function renderRail(){
     if(CHAINS.some(ch=>ch.loads.includes(d.id))) c.dataset.used='1';
     c.innerHTML = d.blank
       ? '<div class="m">'+esc(d.title||'カスタム作業')+'</div><div class="s">自作</div>'
-      : '<div class="t">'+esc(d.at)+'</div><div class="m">'+esc(d.from)+' → '+esc(d.to)+'</div><div class="s">'+esc(d.items)+'</div>';
+      : '<div class="t">⏱ '+esc(doTimeLabel(d))+(d.no?'　No.'+esc(d.no):'')+'</div>'
+        +'<div class="m">'+esc(d.from||'元？')+' → '+esc(d.to||'先？')+'</div>'
+        +(d.toDetail&&d.toDetail!==d.to?'<div class="s">📍'+esc(d.toDetail)+'</div>':'')
+        +'<div class="s">'+esc(d.items)+'</div>'
+        +(d.dept?'<div class="s" style="opacity:.75">'+esc(d.dept)+'</div>':'');
     list.appendChild(c);
   });
   const add=el('button','addbtn'); add.textContent='＋ ②を自分で足す';
@@ -2801,11 +2811,11 @@ function showLoadPicker(b){
   let html=list.length?'':'<p style="font-size:13px">この日のCO-31がありません。</p>';
   list.forEach(d=>{
     html+='<div class="pk"><div class="hd"><input type="checkbox" data-all="'+d.id+'">'
-      +esc(doLabel(d))+' <small>'+esc((d.dept||'')+' '+(d.no||'')+' '+(d.at||'')+'搬入希望')+'</small></div>';
+      +esc(doLabel(d))+' <small>'+esc('No.'+(d.no||'')+' '+(d.dept||'')+' ／ 希望 '+doTimeLabel(d))+'</small></div>';
     d.lines.forEach(l=>{
       const k=d.id+'|'+l.id, on=cur[k]!==undefined;
       html+='<div class="ln"><input type="checkbox" data-k="'+k+'"'+(on?' checked':'')+'>'
-        +'<span class="nm">'+esc(l.name)+'</span>'
+        +'<span class="nm">'+esc(l.name)+(l.size?'<br><span style="font-size:10px;color:var(--ink-soft)">'+esc(l.size)+'</span>':'')+'</span>'
         +'<input type="number" min="1" max="'+l.qty+'" data-q="'+k+'" value="'+(on?cur[k]:l.qty)+'">'
         +'<span class="max">/ '+l.qty+'</span></div>';
     });
@@ -2842,7 +2852,7 @@ function showDropPicker(b){
   Object.keys(byDo).forEach(did=>{
     const d=getDo(did);
     html+='<div class="pk"><div class="hd"><input type="checkbox" data-all="'+did+'">'
-      +esc(doLabel(d))+' <small>行き先 '+esc(d?d.to:'')+'</small></div>';
+      +esc(doLabel(d))+' <small>行き先 '+esc((d?d.to:'')+(d&&d.toDetail&&d.toDetail!==d.to?' / '+d.toDetail:''))+'</small></div>';
     byDo[did].forEach(it=>{
       const k=it.d+'|'+it.l, sel=cur[k]!==undefined;
       html+='<div class="ln"><input type="checkbox" data-k="'+k+'"'+(sel?' checked':'')+'>'
@@ -3344,10 +3354,27 @@ function openDo(did){
   const d=getDo(did); if(!d){ state.panel=null; showEmpty(); return; }
   state.sel=null; state.check=null; state.panel=()=>openDo(did);
   const on=CHAINS.filter(c=>c.loads.includes(did));
-  let html = d.blank
-    ? '<div class="fld"><label>やること</label><input id="q-t" value="'+esc(d.title)+'"></div><div class="okbox"><dt>出どころ</dt><dd>自作</dd></div>'
-    : '<div class="okbox"><dt>搬入希望</dt><dd class="mono">'+esc(d.at)+'</dd><dt>配送元 → 配送先</dt><dd>'+esc(d.from)+' → '+esc(d.to)+'</dd><dt>品目</dt><dd>'+esc(d.items)+'</dd><dt>出どころ</dt><dd>CO-31（読み取り）</dd></div>'
-      +'<p class="sub">CO-31から来た内容はここでは直しません。直すときはCO-31側で修正します。</p>';
+  let html;
+  if(d.blank){
+    html='<div class="fld"><label>やること</label><input id="q-t" value="'+esc(d.title)+'"></div>'
+      +'<div class="okbox"><dt>出どころ</dt><dd>自作</dd></div>';
+  }else{
+    html='<div class="okbox">'
+      +'<dt>依頼</dt><dd>No.'+esc(d.no||'—')+'　'+esc(d.dept||'')+'</dd>'
+      +'<dt>搬入希望</dt><dd class="mono">'+esc(doTimeLabel(d))+'</dd>'
+      +'<dt>原文</dt><dd class="mono" style="font-size:11px">'+esc(d.whenRaw||'')+'</dd>'
+      +'<dt>配送元</dt><dd>'+esc(d.from||'—')+(d.fromText&&d.fromText!==d.from?'<small style="display:block;color:var(--ink-soft)">'+esc(d.fromText)+'</small>':'')+'</dd>'
+      +'<dt>配送先</dt><dd>'+esc(d.to||'—')+(d.toDetail&&d.toDetail!==d.to?'<small style="display:block;color:var(--ink-soft)">📍'+esc(d.toDetail)+'</small>':'')+'</dd>'
+      +'</div>';
+    html+='<span class="lab">品目</span><div class="cargo">'
+      +(d.lines&&d.lines.length?d.lines.map(function(l){
+          return '<div class="ln"><span class="tx">'+esc(l.name)+' × '+l.qty
+            +(l.size?'<small>'+esc(l.size)+'</small>':'')+'</span></div>';
+        }).join(''):'<div class="nil">品目なし</div>')
+      +'</div>';
+    if(d.note) html+='<div class="okbox"><dt>備考</dt><dd style="font-size:12px;white-space:pre-wrap">'+esc(d.note)+'</dd></div>';
+    html+='<p class="sub">CO-31から来た内容はここでは直しません。直すときはCO-31側で修正します。</p>';
+  }
   html+='<div class="okbox"><dt>積まれている便</dt><dd>'
      +(on.length?on.map(c=>{const s=steps(c.id)[0]; const ln=LANES.find(l=>l.id===(s?s.laneId:''));
         return s?(dayOfT(s.t).label+' '+hhmmT(s.t)+' '+esc(ln?ln.name:'')):'（未配置）';}).join('<br>'):'まだ積まれていません')+'</dd></div>';
@@ -3414,121 +3441,96 @@ $('#flag3').addEventListener('click',showFootIssues);
 $('#flag4').addEventListener('click',showCapIssues);
 
 /* ============================================================
-   CO-31 実データ読み込み（読み取り専用・v36で追加）
-   ------------------------------------------------------------
-   工程表システム側の「読み取り専用ウェブアプリ(doGet)」が返すJSONを
-   fetchして、②(DOS)と積み込みピッカーへ流し込む。
-   ・保存は一切しない（このフェーズは読み込みのみ）
-   ・EXEC_URL 未設定や失敗時は、内蔵のデモデータのまま動く
+   実データの取込（CO-31 と 名簿）
    ============================================================ */
-const CO31_API = {
-  /* ↓↓↓ デプロイした「CO-31読み取りAPI」ウェブアプリの exec URL をここに貼る ↓↓↓ */
-  EXEC_URL: 'https://script.google.com/macros/s/AKfycbw41gYVPhGvNCx5cQ-6XP9_j0qu7nxkTUdshD9hegrsLqCzjwoF504TyY-1dAkdAkTJ-A/exec',
-  /* ↑↑↑ 空のままだと読み込みは実行されず、デモデータで動作します ↑↑↑ */
-  AUTO_LOAD: true   /* 起動時に自動で読み込むか */
-};
+var API_URL='https://script.google.com/macros/s/AKfycbw41gYVPhGvNCx5cQ-6XP9_j0qu7nxkTUdshD9hegrsLqCzjwoF504TyY-1dAkdAkTJ-A/exec';
 
-/* API側の場所名(フル名) → モックの場所名(PLACES)。未知の名前はそのまま使う */
-const CO31_PLACE_MAP = {
-  'コンベンションセンター展示棟':'展示棟',
-  'コンベンションセンター劇場棟':'劇場棟',
-  '沖縄コンベンションセンター':'コンベンション',
-  'コンベンション':'コンベンション',
-  'レントオール沖縄':'レンタル会社',
-  '新川王国会館':'新川王国会館',
-  '森川王国会館':'森川王国会館',
-  '城間王国会館':'城間王国会館',
-  '大会倉庫':'大会倉庫'
-};
-function co31Place(name){
-  const s=String(name==null?'':name).trim();
-  if(!s) return '';
-  if(CO31_PLACE_MAP[s]) return CO31_PLACE_MAP[s];
-  if(s.indexOf('展示棟')>=0) return '展示棟';
-  if(s.indexOf('劇場棟')>=0) return '劇場棟';
-  if(s.indexOf('レントオール')>=0||s.indexOf('レンタル')>=0) return 'レンタル会社';
-  if(s.indexOf('コンベンション')>=0) return 'コンベンション';
-  return s;
+function doTimeLabel(d){
+  if(!d) return '';
+  if(d.at) return d.at+(d.atEnd?'〜'+d.atEnd:'')+(d.after?'以降':'');
+  if(d.period&&d.period!=='指定なし') return d.period+(d.timeText&&d.timeText!=='なし'?'（'+d.timeText+'）':'');
+  return '指定なし';
 }
-/* dateKey 'MM/DD' → DAYS の id 'MMDD' */
-function co31DayId(dateKey){
-  const s=String(dateKey==null?'':dateKey).replace(/[^0-9]/g,'');
-  return s.length===4?s:'';
+function applyCO31(list){
+  if(!list||!list.length) return 0;
+  DOS=list.map(function(r,i){
+    var lines=(r.lines||[]).map(function(l,j){
+      return {id:'k'+i+'_'+j, name:l.name, qty:l.qty||1, size:l.size||''};
+    });
+    return {
+      id:'k'+i,
+      no:r.no||'', dept:r.dept||'',
+      day:r.day||'0827',
+      at:r.at||'', period:r.period||'', atEnd:r.atEnd||'', after:!!r.after, timeText:r.timeText||'',
+      whenRaw:r.whenRaw||'',
+      from:(r.fromVenue||r.from||''), fromText:(r.from||''),
+      to:(r.toVenue||r.to||''),     toDetail:(r.toDetail||r.to||''),
+      note:r.note||'',
+      items:lines.map(function(l){return l.name+l.qty;}).join(' / '),
+      lines:lines
+    };
+  });
+  return DOS.length;
 }
-/* readCO31Todos_() の1件 → ②(DOS) 1枚 */
-function co31TodoToDo(t,i){
-  const base='co31-'+String(t&&t.no!=null?t.no:'').replace(/[^0-9A-Za-z]/g,'')+'-'+i;
-  const rawItems=(t&&Array.isArray(t.items))?t.items:[];
-  const lines=rawItems.map(function(it,j){ return {
-    id:base+'-l'+j,
-    name:String(it&&it.name!=null?it.name:'（品目名なし）'),
-    qty:Math.max(1, parseInt(it&&it.qty,10)||1)
-  };});
-  const itemsText=rawItems
-    .map(function(it){ return String(it&&it.name!=null?it.name:'')+((it&&it.qty)?('×'+it.qty):''); })
-    .filter(Boolean).join(' / ');
-  return {
-    id:base,
-    day:co31DayId(t&&t.dateKey),
-    at:String(t&&t.timeLabel!=null?t.timeLabel:'').trim(),
-    dept:String(t&&t.destDept!=null?t.destDept:''),
-    no:(t&&t.no!=null)?String(t.no):'',
-    from:'',                    /* CO31_Todoには配送元が無いため空。次段階でCO31_Responsesの配送元列を足す */
-    to:co31Place(t&&t.destLoc),
-    items:itemsText,
-    lines:lines,
-    _co31:true,                 /* 実データ由来の目印（自作②と区別） */
-    _guessed:!!(t&&t.timeGuessed),
-    _groupKey:(t&&t.groupKey)||''
-  };
+function applyRoster(list){
+  if(!list||!list.length) return 0;
+  PEOPLE=list.map(function(r,i){
+    var av={};
+    var src=r.availMin||{};
+    Object.keys(src).forEach(function(k){ av[k]=[src[k][0],src[k][1]]; });
+    return {
+      id:'p'+i, name:r.name, cong:r.cong||'',
+      tm:(r.tm||'').replace(/\s/g,'')||null,
+      seats:r.seats||0, avail:av
+    };
+  });
+  return PEOPLE.length;
 }
-
-let CO31_LOADED=false;
-function loadCO31(opts){
-  opts=opts||{};
-  const url=(CO31_API.EXEC_URL||'').trim();
-  if(!url){ if(opts.manual) toast('CO-31 APIのURLが未設定です（コード内の CO31_API.EXEC_URL）。'); return; }
-  toast('CO-31を読み込み中…');
-  fetch(url,{method:'GET'})
-    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-    .then(function(json){
-      const todos = Array.isArray(json) ? json
-                  : (json && Array.isArray(json.todos)) ? json.todos
-                  : (json && Array.isArray(json.data))  ? json.data : null;
-      if(!todos) throw new Error('todos配列が見つかりません（JSON形式を確認）');
-      const mapped=todos.map(co31TodoToDo);
-
-      /* 初回の実データ読み込み時は、デモの便・ブロック・人配置を消して実データで始める */
-      if(!CO31_LOADED){
-        BLOCKS.length=0; CHAINS.length=0; PSHIFTS.length=0;
-        MULTI={}; state.sel=null; state.check=null; state.panel=null; state.focus=null;
-      }
-      /* ②の差し替え：自作②(blank)と、便で使用中の実データDOは温存。重複IDは避ける */
-      const usedIds={}; CHAINS.forEach(function(c){ (c.loads||[]).forEach(function(id){ usedIds[id]=1; }); });
-      const kept=DOS.filter(function(d){ return d.blank || usedIds[d.id]; });
-      const keptIds={}; kept.forEach(function(d){ keptIds[d.id]=1; });
-      DOS = kept.concat(mapped.filter(function(d){ return !keptIds[d.id]; }));
-
-      CO31_LOADED=true;
-      const noDay=mapped.filter(function(d){ return !d.day; }).length;
-      renderAll();
-      let msg='CO-31を'+mapped.length+'件読み込みました。';
-      if(noDay) msg+='（日付が読めず非表示 '+noDay+'件）';
-      toast(msg);
-    })
-    .catch(function(err){
-      console.error('CO-31読み込み失敗:', err);
-      toast('CO-31の読み込みに失敗しました（URL・公開設定・JSONを確認）。デモのまま続けます。');
+function afterLoad(js){
+  var n1=applyCO31(js.co31), n2=applyRoster(js.roster);
+  var st=$('#dataState');
+  st.textContent='実データ CO-31 '+n1+'件 / 名簿 '+n2+'名';
+  st.dataset.state='live';
+  /* 場所を実データから足す */
+  DOS.forEach(function(d){ if(d.from) ensurePlace(d.from); if(d.to) ensurePlace(d.to); });
+  state.check=null; state.panel=null; state.sel=null;
+  renderAll();
+  var msg=[];
+  if(js.co31Error) msg.push('CO-31: '+js.co31Error);
+  if(js.rosterError) msg.push('名簿: '+js.rosterError);
+  if(!n2) msg.push('名簿が空です（名簿タブを埋めると人が入れ替わります）');
+  toast(msg.length?msg.join(' / '):('読み込みました。CO-31 '+n1+'件・名簿 '+n2+'名'));
+}
+function loadLive(){
+  var st=$('#dataState');
+  st.textContent='読み込み中…'; st.dataset.state='';
+  fetch(API_URL+'?action=all', {method:'GET'})
+    .then(function(r){ return r.json(); })
+    .then(function(js){ afterLoad(js); })
+    .catch(function(e){
+      st.textContent='取込できず'; st.dataset.state='ng';
+      pasteSheet(String(e));
     });
 }
+function pasteSheet(err){
+  var html='<p style="font-size:12.5px;margin:0 0 8px">自動で読み込めませんでした'
+    +(err?'（'+esc(err)+'）':'')+'。<br>下のURLをブラウザで開き、出てきた文字を全部コピーして貼り付けてください。</p>'
+    +'<p style="font-size:11px;word-break:break-all;background:#fff;border:1px solid var(--rule);padding:6px">'
+    +esc(API_URL)+'?action=all</p>'
+    +'<textarea class="ta" id="pj" placeholder="ここに貼り付け"></textarea>';
+  bigSheet('実データの取込', html, function(box){
+    try{
+      var js=JSON.parse(box.querySelector('#pj').value);
+      afterLoad(js);
+    }catch(e2){ toast('読み取れませんでした: '+e2); }
+  },'取り込む');
+}
+$('#btnLoad').addEventListener('click',loadLive);
 
 /* ---------- init ---------- */
 renderDays(); renderViews(); renderTMFilter(); setZoom(state.ppm); renderAll();
+setTimeout(loadLive,300);
 scrollToDay(state.day,false);
-
-/* CO-31 実データ：ボタン配線＋（設定時）自動読み込み */
-(function(){ const b=$('#co31Reload'); if(b) b.addEventListener('click',function(){ loadCO31({manual:true}); }); })();
-if(CO31_API.AUTO_LOAD) loadCO31();
 </script>
 </body>
 </html>

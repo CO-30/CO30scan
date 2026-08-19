@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>工程ボード v41（モック） 2026宜野湾大会</title>
+<title>工程ボード v42（モック） 2026宜野湾大会</title>
 <style>
   :root{
     --ink:#16222E; --ink-soft:#43566A; --canvas:#EDEEE9; --panel:#1D2C3A;
@@ -440,7 +440,7 @@
 <body>
 
 <div class="top">
-  <div class="brand"><b>工程ボード</b><span>2026宜野湾大会 / LIVE v41</span></div>
+  <div class="brand"><b>工程ボード</b><span>2026宜野湾大会 / LIVE v42</span></div>
   <div class="days" id="days"></div>
   <div class="days" id="tmfilter"></div>
   <div class="days" id="views">
@@ -505,7 +505,7 @@
 <script>
 "use strict";
 /* ============================================================
-   工程ボード v41（モック）
+   工程ボード v42（モック）
    用語   : ②=WHAT(何を) / ③=DO(やること) / ④=WHO(だれが) / ⑤=タイムライン
    時間軸 : 8/26〜8/31を1本につないだ連続タイムライン。右へ行けば翌日へ続く
    ④判定 : ブロックを選ぶ／人をブロックへ運ぶと、入れない人が④で赤くなる
@@ -718,7 +718,7 @@ let state={day:'0827', ppm:1.6, view:'lane', tmView:'すべて', tmNew:'運送TM
   sel:null, check:null, hoverStaff:null, focus:null, panel:null};
 const blkTM=b=>b.tm||(getChain(b.chainId)||{}).tm||'運送TM';
 const inTM=x=>state.tmView==='すべて'||x===state.tmView;
-let VL=[];
+let VL=[], VLH=[], VLTOP=[];
 let seq=300; const uid=p=>p+(++seq);
 
 const $=s=>document.querySelector(s);
@@ -983,11 +983,19 @@ function renderRuler(){
     r.appendChild(i);
   }
 }
+function totalH(){
+  if(VLH.length) return VLH.reduce(function(a,b){return a+b;},0);
+  return VL.length*LH;
+}
+function rowY(i){
+  if(VLTOP.length>i) return VLTOP[i]+(VLH[i]||LH)/2;
+  return i*LH+LH/2;
+}
 function renderShade(){
   const sh=$('#shade');
   sh.innerHTML='';
   sh.style.width=((TL_END-TL_START)*state.ppm)+'px';
-  sh.style.height=(VL.length*LH)+'px';
+  sh.style.height=totalH()+'px';
   for(let d=0;d<DAYS.length;d++){
     const ns=Math.max(TL_START,d*1440+22*60), ne=Math.min(TL_END,d*1440+1440+5*60);
     if(ne>ns){
@@ -1004,7 +1012,8 @@ function renderShade(){
         const s2=Math.max(TL_START,w[0]), e2=Math.min(TL_END,w[1]); if(e2<=s2) return;
         const a=el('div','okband');
         a.style.left=m2x(s2)+'px'; a.style.width=((e2-s2)*state.ppm)+'px';
-        a.style.top=(i*LH)+'px'; a.style.height=LH+'px';
+        a.style.top=((VLTOP[i]!==undefined?VLTOP[i]:i*LH))+'px';
+        a.style.height=(VLH[i]||LH)+'px';
         sh.appendChild(a);
       });
     });
@@ -1029,13 +1038,19 @@ function viewLanes(){
   }
   return LANES;
 }
+function laneRowH(ln){
+  if(!ln||!ln.people) return LH;
+  const items=lanePeopleItems(ln.srcLane);
+  const lv=packPeople(items);
+  return Math.max(46, 16+lv*32);
+}
 function renderLanes(){
   if(state.view!=='place') document.querySelectorAll('#lanes .mvb').forEach(n=>n.remove());
   if(state.view==='place'){ VL=[]; renderPlaceView(); return; }
   const diagram=state.view==='diagram';
   LH = diagram ? 54 : 84;
   document.documentElement.style.setProperty('--lane-h', LH+'px');
-  VL=viewLanes();
+  VL=viewLanes(); VLH=[]; VLTOP=[];
   const person=state.view!=='lane';
   const heads=$('#laneHeads'); heads.innerHTML='';
   const body=$('#lanes');
@@ -1089,9 +1104,13 @@ function renderLanes(){
       ops.querySelector('[data-del]').addEventListener('click',()=>delLane(ln.id));
       h.append(nameRow,selRow,ops);
     }
+    const rowH=laneRowH(ln);
+    h.style.height=rowH+'px';
+    VLH[idx]=rowH; VLTOP[idx]=(idx?VLTOP[idx-1]+VLH[idx-1]:0);
     heads.appendChild(h);
     const lane=el('div','lane'+(ln.people?' prow':'')); lane.dataset.lane=ln.id;
     if(ln.people){ lane.dataset.rtype='people'; lane.dataset.src=ln.srcLane; }
+    lane.style.height=rowH+'px';
     lane.style.setProperty('--hr',(60*state.ppm)+'px');
     body.appendChild(lane);
   });
@@ -1177,7 +1196,7 @@ function renderBlocks(){
       const k=el('button','knob'); k.dataset.chain=c.id; k.textContent='＋';
       k.title='次のやることをつなげる';
       k.style.left=(m2x(last.t+last.dur)+7)+'px';
-      k.style.top=((LH-26)/2)+'px';
+      k.style.top=(((VLH[laneIdx(last.laneId)]||LH)-26)/2)+'px';
       lane.appendChild(k);
     });
   }
@@ -1274,34 +1293,52 @@ function inferPlace(chainId,howId,last){
   }
   return {place:cur, to:null};
 }
+function lanePeopleItems(srcLane){
+  return PSHIFTS.filter(function(s){
+    if(!s.src) return false;
+    const b=getBlk(s.src);
+    return !!(b && b.laneId===srcLane);
+  }).sort(function(a,b2){ return a.t-b2.t; });
+}
+function packPeople(items){
+  const ends=[];
+  items.forEach(function(s){
+    let i=0; while(ends[i]!==undefined && ends[i]>s.t) i++;
+    ends[i]=s.t+s.dur; s._lv=i;
+  });
+  return Math.max(1,ends.length);
+}
 function renderLanePeople(){
   document.querySelectorAll('.lane[data-rtype="people"]').forEach(function(lane){
     const src=lane.dataset.src;
-    const items=[];
-    BLOCKS.filter(function(b){return b.laneId===src;}).forEach(function(b){
-      b.staff.forEach(function(pid){ items.push({b:b, pid:pid}); });
-    });
-    items.sort(function(a,b2){ return a.b.t-b2.b.t; });
-    const ends=[];
-    items.forEach(function(it){
-      let i=0; while(ends[i]!==undefined && ends[i]>it.b.t) i++;
-      ends[i]=it.b.t+it.b.dur; it.lv=i;
-    });
-    items.forEach(function(it){
-      const p=getWho(it.pid), h=getHow(it.b.howId);
+    const items=lanePeopleItems(src);
+    packPeople(items);
+    items.forEach(function(s){
+      const p=getWho(s.pid), h=getHow(s.how||(getBlk(s.src)||{}).howId);
       if(!p) return;
       const d=el('div','ps');
-      d.style.left=m2x(it.b.t)+'px';
-      d.style.top=(6+it.lv*30)+'px';
-      d.style.width=Math.max(66,it.b.dur*state.ppm)+'px';
-      const col=pColor(it.pid);
-      d.style.borderColor=col; d.style.color=col; d.style.background='#fff';
-      d.title=hhmmT(it.b.t)+'–'+hhmmT(it.b.t+it.b.dur)+' '+(h?h.name:'');
+      d.style.left=m2x(s.t)+'px';
+      d.style.top=(8+(s._lv||0)*32)+'px';
+      d.style.width=Math.max(66,s.dur*state.ppm)+'px';
+      const col=pColor(s.pid);
+      d.style.borderColor=col; d.style.color=col;
+      d.style.background=shiftClash(s)?'#FDF1F0':'#fff';
+      d.title=hhmmT(s.t)+'–'+hhmmT(s.t+s.dur)+' '+(h?h.name:'')+(s.custom?'（時間を個別に調整）':'');
       d.innerHTML='<span class="cdot" style="background:'+tmColor((p.tm||'運送TM'))+'"></span>'
         +'<span style="font-weight:700">'+esc(p.name.split(' ')[0])+'</span>'
-        +'<span style="font-size:10.5px;opacity:.8"> '+esc(h?h.name:'')+'</span>';
-      d.onclick=function(){ openDetail(it.b.id); };
+        +'<span style="font-size:10.5px;opacity:.8"> '+esc(h?h.name:'')+(s.custom?' ✎':'')+'</span>'
+        +'<div class="h l"></div><div class="h r"></div>';
       lane.appendChild(d);
+      const o={t:s.t,dur:s.dur};
+      const redraw=function(){ renderBlocks(); };
+      makeDrag(d.querySelector('.h.l'),{start:function(){o.t=s.t;o.dur=s.dur;},
+        move:function(dx){ const nt=clamp(snap(o.t+dx/state.ppm),TL_START,o.t+o.dur-SNAP);
+          s.custom=true; s.dur=o.t+o.dur-nt; s.t=nt; redraw(); }});
+      makeDrag(d.querySelector('.h.r'),{start:function(){o.t=s.t;o.dur=s.dur;},
+        move:function(dx){ s.custom=true; s.dur=clamp(snap(o.dur+dx/state.ppm),SNAP,TL_END-s.t); redraw(); }});
+      makeDrag(d,{start:function(){o.t=s.t;o.dur=s.dur;},
+        move:function(dx){ s.custom=true; s.t=clamp(snap(o.t+dx/state.ppm),TL_START,TL_END-s.dur); redraw(); },
+        tap:function(){ openPerson(s.pid); }});
     });
     const add=el('button','addp'); add.textContent='＋ 人';
     add.onclick=function(ev){
@@ -1319,12 +1356,12 @@ function renderLanePeople(){
 function drawWires(){
   const svg=$('#wires');
   svg.setAttribute('width',(TL_END-TL_START)*state.ppm);
-  svg.setAttribute('height',VL.length*LH);
+  svg.setAttribute('height',totalH());
   svg.innerHTML='<defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="context-stroke"></path></marker></defs>';
   function wire(a,b,ai,bi,col,isBad,thin){
     if(ai<0||bi<0) return;
-    const x1=m2x(a.t+a.dur), y1=ai*LH+LH/2;
-    const x2=m2x(b.t),       y2=bi*LH+LH/2;
+    const x1=m2x(a.t+a.dur), y1=rowY(ai);
+    const x2=m2x(b.t),       y2=rowY(bi);
     const mx=Math.max(x1+9,x2-9);
     const p=document.createElementNS('http://www.w3.org/2000/svg','path');
     p.setAttribute('d','M'+x1+','+y1+' L'+mx+','+y1+' L'+mx+','+y2+' L'+x2+','+y2);
@@ -1982,7 +2019,7 @@ function drawShift(lane,s,rowTop){
       }
       redraw();
     },
-    tap:()=>{ if(src) openDetail(src.id); else openShift(s.id); }});
+    tap:()=>{ openPerson(s.pid); }});
 }
 function makeDrag(node,opts){
   node.addEventListener('pointerdown',e=>{
@@ -2126,7 +2163,8 @@ function syncAllShifts(){
     (b.staff||[]).forEach(pid=>{
       let s=PSHIFTS.filter(x=>x.src===b.id&&x.pid===pid)[0];
       if(!s){ s={id:uid('s'), pid:pid, src:b.id, arrive:null, note:''}; PSHIFTS.push(s); }
-      s.place=b.place; s.t=b.t; s.dur=b.dur; s.how=b.howId;
+      s.place=b.place; s.how=b.howId;
+      if(!s.custom){ s.t=b.t; s.dur=b.dur; }      /* 個別に調整した枠はそのまま */
     });
   });
 }
@@ -3473,11 +3511,12 @@ function openPerson(pid){
 
   openPanel('① 人の情報', p.cong||'', html);
 
-  const touch=()=>{ renderRail(); saveSoon(); };
-  $('#p-name').addEventListener('change',e=>{ p.name=e.target.value; renderAll(); });
+  /* 入力中は①を描き直さない（入れた文字が消えないように） */
+  const touch=()=>{ renderRail(); renderBlocks(); saveSoon(); };
+  $('#p-name').addEventListener('change',e=>{ p.name=e.target.value; touch(); });
   $('#p-cong').addEventListener('change',e=>{ p.cong=e.target.value; touch(); });
   $('#p-seat').addEventListener('change',e=>{ p.seats=Math.max(0,parseInt(e.target.value||'0',10)); touch(); });
-  $('#p-tm').addEventListener('change',e=>{ p.tm=e.target.value||null; renderAll(); });
+  $('#p-tm').addEventListener('change',e=>{ p.tm=e.target.value||null; touch(); });
 
   const readDay=(dayId)=>{
     const box=$('#p-days');
@@ -3485,17 +3524,18 @@ function openPerson(pid){
     const b2=box.querySelector('[data-av="'+dayId+'"][data-e="e"]').value;
     p.avail=p.avail||{};
     if(a&&b2&&mins(b2)>mins(a)) p.avail[dayId]=[mins(a),mins(b2)];
-    else delete p.avail[dayId];
-    renderAll();
+    else if(!a&&!b2) delete p.avail[dayId];
+    else return;                     /* 片方だけ入力中は何もしない（消さない） */
+    touch();                         /* ①は描き直さない */
   };
   $('#p-days').querySelectorAll('[data-av]').forEach(inp=>{
     inp.addEventListener('change',()=>readDay(inp.dataset.av));
   });
   $('#p-days').querySelectorAll('[data-avclr]').forEach(btn=>{
-    btn.addEventListener('click',()=>{ if(p.avail) delete p.avail[btn.dataset.avclr]; renderAll(); });
+    btn.addEventListener('click',()=>{ if(p.avail) delete p.avail[btn.dataset.avclr]; touch(); openPerson(pid); });
   });
   $('#p-days').querySelectorAll('[data-avall]').forEach(btn=>{
-    btn.addEventListener('click',()=>{ p.avail=p.avail||{}; p.avail[btn.dataset.avall]=[7*60,21*60]; renderAll(); });
+    btn.addEventListener('click',()=>{ p.avail=p.avail||{}; p.avail[btn.dataset.avall]=[7*60,21*60]; touch(); openPerson(pid); });
   });
   $('#p-save').addEventListener('click',ev=>{ saveRosterToSheet(ev.target); });
   $('#p-del').addEventListener('click',()=>{

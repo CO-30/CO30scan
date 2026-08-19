@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>工程ボード v42（モック） 2026宜野湾大会</title>
+<title>工程ボード v43（モック） 2026宜野湾大会</title>
 <style>
   :root{
     --ink:#16222E; --ink-soft:#43566A; --canvas:#EDEEE9; --panel:#1D2C3A;
@@ -397,7 +397,8 @@
   .tmsel button{border:1px solid var(--rule);background:#fff;border-radius:11px;padding:3px 9px;
     font-size:11px;cursor:pointer;color:var(--ink-soft)}
   .tmsel button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
-  #saveState[data-state="ok"]{background:#23543C;border-color:#2E7D4F}
+  #saveState[data-state="ok"],#rosterState[data-state="ok"]{background:#23543C;border-color:#2E7D4F}
+  #rosterState[data-state="ng"]{background:var(--alert);border-color:var(--alert);font-weight:700}
   #dataState[data-state="live"]{background:#23543C;border-color:#2E7D4F}
   #dataState[data-state="ng"]{background:var(--alert);border-color:var(--alert);font-weight:700}
   .ta{width:100%;height:180px;border:1px solid var(--rule-strong);border-radius:3px;padding:8px;
@@ -440,7 +441,7 @@
 <body>
 
 <div class="top">
-  <div class="brand"><b>工程ボード</b><span>2026宜野湾大会 / LIVE v42</span></div>
+  <div class="brand"><b>工程ボード</b><span>2026宜野湾大会 / LIVE v43</span></div>
   <div class="days" id="days"></div>
   <div class="days" id="tmfilter"></div>
   <div class="days" id="views">
@@ -458,6 +459,7 @@
   <div class="tool"><button id="btnLoad" title="CO-31と名簿を読み込む">⟳ 取込</button></div>
   <div class="flag" id="dataState">サンプル表示中</div>
   <div class="flag" id="saveState">未保存</div>
+  <div class="flag" id="rosterState">名簿：—</div>
   <div class="tool"><button id="btnSave" title="スプレッドシートに保存">☁ シートに保存</button></div>
   <div class="tool"><button id="btnClear" title="この端末の保存を消す">🗑 端末の保存を消す</button></div>
 </div>
@@ -505,7 +507,7 @@
 <script>
 "use strict";
 /* ============================================================
-   工程ボード v42（モック）
+   工程ボード v43（モック）
    用語   : ②=WHAT(何を) / ③=DO(やること) / ④=WHO(だれが) / ⑤=タイムライン
    時間軸 : 8/26〜8/31を1本につないだ連続タイムライン。右へ行けば翌日へ続く
    ④判定 : ブロックを選ぶ／人をブロックへ運ぶと、入れない人が④で赤くなる
@@ -2156,14 +2158,13 @@ function syncAllShifts(){
   PSHIFTS=PSHIFTS.filter(s=>{
     if(!s.src) return true;
     const b=getBlk(s.src);
-    return !!(b && b.place && b.staff.indexOf(s.pid)>=0);
+    return !!(b && b.staff.indexOf(s.pid)>=0);
   });
   BLOCKS.forEach(b=>{
-    if(!b.place) return;
     (b.staff||[]).forEach(pid=>{
       let s=PSHIFTS.filter(x=>x.src===b.id&&x.pid===pid)[0];
       if(!s){ s={id:uid('s'), pid:pid, src:b.id, arrive:null, note:''}; PSHIFTS.push(s); }
-      s.place=b.place; s.how=b.howId;
+      s.place=b.place||''; s.how=b.howId;
       if(!s.custom){ s.t=b.t; s.dur=b.dur; }      /* 個別に調整した枠はそのまま */
     });
   });
@@ -2829,7 +2830,7 @@ function showRoster(){
       const row=el('div'); row.style.cssText='display:flex;gap:6px;flex-wrap:wrap;align-items:center';
       const tmS=el('select'); tmS.style.cssText='border:1px solid var(--rule);border-radius:3px;padding:4px 6px;font-size:12px';
       tmS.innerHTML='<option value="">TM未設定</option>'+TMS.map(t=>'<option'+(p.tm===t?' selected':'')+'>'+esc(t)+'</option>').join('');
-      tmS.onchange=()=>{ p.tm=tmS.value||null; renderAll(); again(); };
+      tmS.onchange=()=>{ p.tm=tmS.value||null; rosterSaveSoon(); renderAll(); again(); };
       const f=el('input'); f.type='time'; f.step='300'; f.value=w?hhmm(w[0]):'';
       const t=el('input'); t.type='time'; t.step='300'; t.value=w?hhmm(w[1]):'';
       [f,t].forEach(x=>{ x.style.cssText='border:1px solid var(--rule);border-radius:3px;padding:4px 6px;font-family:var(--font-mono);font-size:12px'; });
@@ -2841,12 +2842,12 @@ function showRoster(){
       const saveAv=()=>{
         if(f.value&&t.value&&mins(t.value)>mins(f.value)){ p.avail=p.avail||{}; p.avail[day]=[mins(f.value),mins(t.value)]; }
         else { if(p.avail) delete p.avail[day]; }
-        renderAll();
+        rosterSaveSoon(); renderAll();
       };
       f.onchange=saveAv; t.onchange=saveAv;
       const st=el('input'); st.type='number'; st.min='0'; st.max='9'; st.value=p.seats||0;
       st.style.cssText='width:52px;border:1px solid var(--rule);border-radius:3px;padding:4px;text-align:center;font-family:var(--font-mono)';
-      st.onchange=()=>{ p.seats=Math.max(0,parseInt(st.value||'0',10)); renderAll(); };
+      st.onchange=()=>{ p.seats=Math.max(0,parseInt(st.value||'0',10)); rosterSaveSoon(); renderAll(); };
       const lb=x=>{ const s2=el('span'); s2.style.cssText='font-size:11px;color:var(--ink-soft)'; s2.textContent=x; return s2; };
       const del=el('button'); del.textContent='×'; del.title='この人を名簿から消す';
       del.style.cssText='margin-left:auto;border:1px solid #E2B4B0;background:#fff;color:var(--alert);'
@@ -3512,7 +3513,7 @@ function openPerson(pid){
   openPanel('① 人の情報', p.cong||'', html);
 
   /* 入力中は①を描き直さない（入れた文字が消えないように） */
-  const touch=()=>{ renderRail(); renderBlocks(); saveSoon(); };
+  const touch=()=>{ renderRail(); renderBlocks(); saveSoon(); rosterSaveSoon(); };
   $('#p-name').addEventListener('change',e=>{ p.name=e.target.value; touch(); });
   $('#p-cong').addEventListener('change',e=>{ p.cong=e.target.value; touch(); });
   $('#p-seat').addEventListener('change',e=>{ p.seats=Math.max(0,parseInt(e.target.value||'0',10)); touch(); });
@@ -3694,10 +3695,21 @@ function clearBoard(){
    ============================================================ */
 function postAPI(payload){
   return fetch(API_URL, {method:'POST', body:JSON.stringify(payload)})
-    .then(function(r){ return r.json(); });
+    .then(function(r){ return r.text(); })
+    .then(function(t){
+      try{ return JSON.parse(t); }
+      catch(e){ return {ok:false, error:'返事がJSONではありません（先頭: '+t.slice(0,80)+'）'}; }
+    });
 }
 function hhmmOf(m){ return hhmm(((m%1440)+1440)%1440); }
-function saveRosterToSheet(btn){
+var rosterTimer=null;
+function rosterSaveSoon(){
+  if(rosterTimer) clearTimeout(rosterTimer);
+  const st=$('#rosterState');
+  if(st){ st.textContent='名簿：未保存'; st.dataset.state='ng'; }
+  rosterTimer=setTimeout(function(){ saveRosterToSheet(null,true); },1500);
+}
+function saveRosterToSheet(btn,quiet){
   const list=PEOPLE.map(function(p){
     const av={};
     Object.keys(p.avail||{}).forEach(function(k){
@@ -3705,16 +3717,24 @@ function saveRosterToSheet(btn){
     });
     return {name:p.name, cong:p.cong||'', tm:p.tm||'', seats:p.seats||0, avail:av};   /* 6日分すべて */
   });
+  const st=$('#rosterState');
   if(btn){ btn.disabled=true; btn.textContent='保存中…'; }
+  if(st){ st.textContent='名簿：保存中'; st.dataset.state=''; }
   postAPI({action:'saveRoster', roster:list})
     .then(function(js){
       if(btn){ btn.disabled=false; btn.textContent='☁ 名簿を保存'; }
-      if(js.ok) renderAll();
-      toast(js.ok?('名簿を保存しました（'+js.saved+'名）'):('保存できません: '+(js.error||'')));
+      if(js.ok){
+        if(st){ st.textContent='名簿：保存ずみ '+js.saved+'名'; st.dataset.state='ok'; }
+        if(!quiet) toast('名簿を保存しました（'+js.saved+'名）');
+      }else{
+        if(st){ st.textContent='名簿：保存できず'; st.dataset.state='ng'; }
+        toast('名簿を保存できません: '+(js.error||'（GASがv6になっているか確認してください）'));
+      }
     })
     .catch(function(e){
       if(btn){ btn.disabled=false; btn.textContent='☁ 名簿を保存'; }
-      toast('保存できません: '+e);
+      if(st){ st.textContent='名簿：保存できず'; st.dataset.state='ng'; }
+      toast('名簿を保存できません: '+e+' … GASを新しいバージョンでデプロイし直してください');
     });
 }
 function planPayload(){

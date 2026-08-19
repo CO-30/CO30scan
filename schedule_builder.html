@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>工程ボード v37（モック） 2026宜野湾大会</title>
+<title>工程ボード v39（モック） 2026宜野湾大会</title>
 <style>
   :root{
     --ink:#16222E; --ink-soft:#43566A; --canvas:#EDEEE9; --panel:#1D2C3A;
@@ -66,7 +66,11 @@
     user-select:none;-webkit-user-select:none}
   .chip:active{cursor:grabbing}
   .chip.do{border-left-color:var(--do)}
-  .chip.how{border-left-color:var(--how);padding:8px 5px;text-align:center}
+  .chip.how{border-left-color:var(--how);padding:8px 5px;text-align:center;position:relative}
+  .chip.how .howdel{position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:50%;
+    border:1px solid var(--rule);background:#fff;color:var(--alert);font-size:11px;line-height:15px;
+    padding:0;cursor:pointer}
+  .chip.how .howdel:hover{background:var(--alert);color:#fff;border-color:var(--alert)}
   .chip.who{border-left-color:var(--who)}
   .chip .t{font-family:var(--font-mono);font-size:11px;color:var(--ink-soft)}
   .chip .m{font-size:12.5px;font-weight:600;margin-top:1px}
@@ -218,7 +222,10 @@
   .block:active{cursor:grabbing}
   .block .bt{font-family:var(--font-mono);font-size:10px;color:var(--ink-soft);white-space:nowrap}
   .block .bt b{color:var(--ink);font-weight:700}
-  .block .bm{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .block .bm{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    display:flex;align-items:center;gap:5px;line-height:1.25}
+  .block .bm .big{font-size:17px;line-height:1}
+  .block .bm svg{height:17px;width:28px;flex:none}
   .block .bs{font-size:11px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .block .bs b{font-weight:600;color:var(--who)}
   .block .hand{position:absolute;top:0;bottom:0;width:22px;cursor:ew-resize;touch-action:none;z-index:5}
@@ -390,6 +397,7 @@
   .tmsel button{border:1px solid var(--rule);background:#fff;border-radius:11px;padding:3px 9px;
     font-size:11px;cursor:pointer;color:var(--ink-soft)}
   .tmsel button[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+  #saveState[data-state="ok"]{background:#23543C;border-color:#2E7D4F}
   #dataState[data-state="live"]{background:#23543C;border-color:#2E7D4F}
   #dataState[data-state="ng"]{background:var(--alert);border-color:var(--alert);font-weight:700}
   .ta{width:100%;height:180px;border:1px solid var(--rule-strong);border-radius:3px;padding:8px;
@@ -432,11 +440,11 @@
 <body>
 
 <div class="top">
-  <div class="brand"><b>工程ボード</b><span>2026宜野湾大会 / LIVE v37</span></div>
+  <div class="brand"><b>工程ボード</b><span>2026宜野湾大会 / LIVE v39</span></div>
   <div class="days" id="days"></div>
   <div class="days" id="tmfilter"></div>
   <div class="days" id="views">
-    <button data-v="lane">行</button><button data-v="person">人</button><button data-v="place">場所</button><button data-v="diagram">ダイヤ</button>
+    <button data-v="lane">車両</button><button data-v="person">人</button><button data-v="place">場所</button><button data-v="diagram">ダイヤ</button>
   </div>
   <div class="tool">
     <button id="zoomOut" title="時間軸を縮める">−</button>
@@ -449,6 +457,8 @@
   <div class="flag" id="flag4">定員オーバー 0件</div>
   <div class="tool"><button id="btnLoad" title="CO-31と名簿を読み込む">⟳ 取込</button></div>
   <div class="flag" id="dataState">サンプル表示中</div>
+  <div class="flag" id="saveState">未保存</div>
+  <div class="tool"><button id="btnClear" title="保存した工程を消す">🗑 保存を消す</button></div>
 </div>
 
 <div id="multibar"><span id="mb-n">0件選択中</span><button class="del" id="mb-del">まとめて消す</button><button id="mb-clr">選択をやめる</button></div>
@@ -477,7 +487,7 @@
   <div class="board">
     <div class="lanecol">
       <div class="ruler-pad">
-        <span>横1本＝1台／1班／1か所</span>
+        <span>横1本＝1台の車両</span>
         <button id="addLane" title="行を足す">＋</button>
       </div>
       <div id="laneHeads"></div>
@@ -494,7 +504,7 @@
 <script>
 "use strict";
 /* ============================================================
-   工程ボード v37（モック）
+   工程ボード v39（モック）
    用語   : ②=WHAT(何を) / ③=DO(やること) / ④=WHO(だれが) / ⑤=タイムライン
    時間軸 : 8/26〜8/31を1本につないだ連続タイムライン。右へ行けば翌日へ続く
    ④判定 : ブロックを選ぶ／人をブロックへ運ぶと、入れない人が④で赤くなる
@@ -506,8 +516,6 @@ let LH=84;                       // 行の高さ（ダイヤ表示では詰め�
 const DAYS=[
   {id:'0826', label:'8/26 水'},
   {id:'0827', label:'8/27 木'},
-  {id:'0828', label:'8/28 金'},
-  {id:'0829', label:'8/29 土'},
   {id:'0830', label:'8/30 日'},
   {id:'0831', label:'8/31 月'}
 ];
@@ -516,11 +524,10 @@ const TL_START=5*60;                          // 8/26 05:00
 const TL_END=(DAYS.length-1)*1440+23*60;      // 8/31 23:00
 
 const FLEET={
-  '0826':['2tユニック'],
-  '0827':['2tユニック','2平ロング','4Tアルミウィング','2t幌'],
-  '0828':[], '0829':[],
-  '0830':['2tユニック','2平ロング','4Tアルミウィング①','4Tアルミウィング②','2t幌'],
-  '0831':[]
+  '0826':['2TU'],
+  '0827':['2TU','2TF①','4TW①','2T幌'],
+  '0830':['2TU','2TF①','4TW①','4TW②','2T幌'],
+  '0831':['2TU']
 };
 
 let DOS=[
@@ -559,9 +566,11 @@ const TRUCKIMG={
 };
 function truckImg(name){
   if(!name) return null;
-  if(name.indexOf('ユニック')>=0) return TRUCKIMG.unic;
-  if(name.indexOf('ウィング')>=0||name.indexOf('幌')>=0||name.indexOf('箱')>=0) return TRUCKIMG.wing;
-  if(name.indexOf('平')>=0||name.indexOf('ロング')>=0) return TRUCKIMG.flat;
+  var n=String(name).toUpperCase();
+  if(n.indexOf('2TU')>=0||n.indexOf('ユニック')>=0) return TRUCKIMG.unic;
+  if(n.indexOf('4TW')>=0||n.indexOf('ウィング')>=0||n.indexOf('箱')>=0) return TRUCKIMG.wing;
+  if(n.indexOf('幌')>=0) return TRUCKIMG.wing;          /* ★2T幌の絵は差し替え予定 */
+  if(n.indexOf('2TF')>=0||n.indexOf('平')>=0||n.indexOf('ロング')>=0) return TRUCKIMG.flat;
   return null;
 }
 function truckTag(name,h){
@@ -623,10 +632,7 @@ let TEMPLATES=[
 ];
 
 /* 班（まとめて割り当てる人のかたまり） */
-let CREWS=[
-  {id:'cr1', name:'積込班A', members:['p5','p6']},
-  {id:'cr2', name:'運転組',  members:['p1','p2']}
-];
+let CREWS=[];
 
 const TMS=['運送TM','情報TM','レンタルTM'];
 const TMCOL={'運送TM':'#B4531B','情報TM':'#1F5F8B','レンタルTM':'#6B3FA0'};
@@ -635,10 +641,12 @@ const tmColor=tm=>TMCOL[tm]||'#7A8A99';
 const tmShort=tm=>TMSHORT[tm]||'—';
 const KINDS=['車両','班','場所','その他'];
 let LANES=[
-  {id:'l1', name:'2tユニック',       kind:'車両'},
-  {id:'l2', name:'4Tアルミウィング', kind:'車両'},
-  {id:'l3', name:'積込班A',          kind:'班'},
-  {id:'l4', name:'新川王国会館',     kind:'場所'}
+  {id:'l1', name:'2TU',   kind:'車両', tm:'運送TM'},
+  {id:'l2', name:'2T幌',  kind:'車両', tm:'運送TM'},
+  {id:'l3', name:'2TF①', kind:'車両', tm:'運送TM'},
+  {id:'l4', name:'2TF②', kind:'車両', tm:'運送TM'},
+  {id:'l5', name:'4TW①', kind:'車両', tm:'運送TM'},
+  {id:'l6', name:'4TW②', kind:'車両', tm:'運送TM'}
 ];
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -854,14 +862,16 @@ function ask(title, fields, onOk){
 /* ---------- パレット ---------- */
 function renderRail(){
   const list=$('#doList'); list.innerHTML='';
-  const today=DOS.filter(d=>d.day===state.day||d.blank);
-  $('#doCount').textContent=today.filter(d=>!d.blank).length+'件';
+  const today=DOS.slice().sort(function(a,b){
+    return (a.day||'').localeCompare(b.day||'') || (a.at||'zz').localeCompare(b.at||'zz');
+  });
+  $('#doCount').textContent=today.filter(d=>!d.blank).length+'件（全日）';
   today.forEach(d=>{
     const c=el('div','chip do'); c.dataset.kind='do'; c.dataset.id=d.id;
     if(CHAINS.some(ch=>ch.loads.includes(d.id))) c.dataset.used='1';
     c.innerHTML = d.blank
       ? '<div class="m">'+esc(d.title||'カスタム作業')+'</div><div class="s">自作</div>'
-      : '<div class="t">⏱ '+esc(doTimeLabel(d))+(d.no?'　No.'+esc(d.no):'')+'</div>'
+      : '<div class="t">'+esc(dayLabelOf(d.day))+'　⏱ '+esc(doTimeLabel(d))+(d.no?'　No.'+esc(d.no):'')+'</div>'
         +'<div class="m">'+esc(d.from||'元？')+' → '+esc(d.to||'先？')+'</div>'
         +(d.toDetail&&d.toDetail!==d.to?'<div class="s">📍'+esc(d.toDetail)+'</div>':'')
         +'<div class="s">'+esc(d.items)+'</div>'
@@ -875,6 +885,16 @@ function renderRail(){
   HOWS.forEach(h=>{
     const c=el('div','chip how'); c.dataset.kind='how'; c.dataset.id=h.id;
     c.innerHTML=howIcon(h)+'<div class="m">'+esc(h.name)+'</div>';
+    if(h.custom){
+      const x=el('button','howdel'); x.textContent='×'; x.title='このやることを消す';
+      x.addEventListener('click',ev=>{
+        ev.stopPropagation();
+        const used=BLOCKS.filter(b=>b.howId===h.id).length;
+        if(used){ toast('この「'+h.name+'」は'+used+'件で使われています。先に外してください。'); return; }
+        HOWS=HOWS.filter(x2=>x2.id!==h.id); renderAll();
+      });
+      c.appendChild(x);
+    }
     hl.appendChild(c);
   });
   const tl=$('#tplList'); tl.innerHTML='';
@@ -890,13 +910,7 @@ function renderRail(){
 
   const wl=$('#whoList'); wl.innerHTML='';
   /* 注目中の人は枠を強調 */
-  const lb2=el('div','minilab'); lb2.textContent='班（まとめて入れる）'; wl.appendChild(lb2);
-  CREWS.forEach(cr=>{
-    const c=el('div','chip crew'); c.dataset.kind='crew'; c.dataset.id=cr.id;
-    c.innerHTML='<div class="m">'+esc(cr.name)+'<span class="ng"></span></div>'
-      +'<div class="s">'+esc(cr.members.map(m=>{const p=getWho(m); return p?p.name:'';}).filter(Boolean).join('・')||'（空）')+'</div>';
-    wl.appendChild(c);
-  });
+
   const roster=el('button','addbtn'); roster.style.marginBottom='4px';
   roster.textContent='📋 奉仕者の名簿'; roster.addEventListener('click',showRoster); wl.appendChild(roster);
   TMS.concat(['(TM未設定)']).forEach(tm=>{
@@ -1103,9 +1117,10 @@ function makeBlockEl(b,person){
   }else{
     const nL=(b.load||[]).length, nD=(b.drop||[]).length;
     const cnt=nL?'　積'+nL+'点':(nD?'　降'+nD+'点':'');
+    const bigIcon = h ? (h.truck?truckSVG(''):'<span class="big">'+(h.ic||'')+'</span>') : '<span class="big">❔</span>';
     n.innerHTML='<div class="tmb" style="background:'+tmColor(tm)+'">'+esc(tmShort(tm))+'</div>'
-      +'<div class="bm" style="margin-top:4px"><span class="cdot" style="background:'+chainColor(b.chainId)+'"></span>'
-      +(h?(h.ic?h.ic+' ':'')+esc(h.name):'③ 未設定')+'</div>'
+      +'<div class="bm" style="margin-top:3px"><span class="cdot" style="background:'+chainColor(b.chainId)+'"></span>'
+      +bigIcon+esc(h?h.name:'やること未設定')+'</div>'
       +'<div class="bs">📍'+esc(b.place||'場所未設定')+esc(cnt)+'</div>'+tail;
   }
   return n;
@@ -2055,6 +2070,7 @@ function syncAllShifts(){
 }
 function renderAll(){
   syncAllShifts();
+  saveSoon();
   renderRail(); renderRuler(); renderLanes();
   if(state.panel) state.panel(); else showEmpty();
   if(typeof syncCols==='function') setTimeout(syncCols,0);
@@ -2091,7 +2107,7 @@ function addCustomHow(then){
     {label:'やることの名前',value:'',ph:'例：会場内運搬'},
     {label:'アイコン',value:'🔧',picks:EMOJI}
   ],v=>{
-    const h={id:uid('h'), ic:(v[1]||'🔧'), name:v[0]};
+    const h={id:uid('h'), ic:(v[1]||'🔧'), name:v[0], custom:true};
     HOWS.push(h); renderRail();
     if(then) then(h); else toast('③に足しました。');
   });
@@ -2123,7 +2139,7 @@ function renderDays(){
   const box=$('#days'); box.innerHTML='';
   DAYS.forEach(d=>{
     const b=el('button'); b.textContent=d.label; b.setAttribute('aria-pressed',d.id===state.day);
-    b.addEventListener('click',()=>{ state.day=d.id; renderDays(); renderRail(); scrollToDay(d.id,true); });
+    b.addEventListener('click',()=>{ state.day=d.id; renderDays(); renderRail(); scrollToDay(d.id,true); saveSoon(); });
     box.appendChild(b);
   });
 }
@@ -2139,7 +2155,7 @@ function renderViews(){
       const to=b.dataset.v;
       state.view=to; renderViews(); renderAll(); syncCols();
       toast(to==='place' ? '行＝場所。下に人の行が付き、＋で次の場所へつなげます。'
-          : to==='lane' ? '横1本＝自分で決めた行。ここで組み立てます。'
+          : to==='lane' ? '横1本＝1台の車両。ここで組み立てます。'
           : to==='person' ? '横1本＝1人。その人の1日の動きが見えます。'
           : '縦＝場所、斜めの線＝移動。線をつかむと便ごと時間をずらせます。');
     };
@@ -2665,7 +2681,11 @@ function issueRow(host,t1,t2,bad,btns){
   return d;
 }
 function showRoster(){
-  issueSheet('奉仕者の名簿（TMと奉仕可能な日）',(host,again)=>{
+  issueSheet('奉仕者の名簿（表示のみ・編集はスプレッドシート）',(host,again)=>{
+    const info=el('div','sub'); info.style.margin='0 0 8px';
+    info.innerHTML='ここでの変更は保存されません。<b>スプレッドシートの「名簿」タブ</b>で直してから、'
+      +'上の「⟳ 取込」を押してください。';
+    host.appendChild(info);
     const day=state.day;
     const sel=el('div','tmsel');
     ['すべて'].concat(TMS).forEach(tm=>{
@@ -2689,7 +2709,7 @@ function showRoster(){
       const row=el('div'); row.style.cssText='display:flex;gap:6px;flex-wrap:wrap;align-items:center';
       const tmS=el('select'); tmS.style.cssText='border:1px solid var(--rule);border-radius:3px;padding:4px 6px;font-size:12px';
       tmS.innerHTML='<option value="">TM未設定</option>'+TMS.map(t=>'<option'+(p.tm===t?' selected':'')+'>'+esc(t)+'</option>').join('');
-      tmS.onchange=()=>{ p.tm=tmS.value||null; again(); };
+      tmS.disabled=true;
       const f=el('input'); f.type='time'; f.step='300'; f.value=w?hhmm(w[0]):'';
       const t=el('input'); t.type='time'; t.step='300'; t.value=w?hhmm(w[1]):'';
       [f,t].forEach(x=>{ x.style.cssText='border:1px solid var(--rule);border-radius:3px;padding:4px 6px;font-family:var(--font-mono);font-size:12px'; });
@@ -2698,16 +2718,21 @@ function showRoster(){
         else if(!f.value&&!t.value&&p.avail){ delete p.avail[day]; }
         again();
       };
-      f.onchange=save; t.onchange=save;
+      f.disabled=true; t.disabled=true;
       const st=el('input'); st.type='number'; st.min='0'; st.max='9'; st.value=p.seats||0;
       st.style.cssText='width:52px;border:1px solid var(--rule);border-radius:3px;padding:4px;text-align:center;font-family:var(--font-mono)';
-      st.onchange=()=>{ p.seats=Math.max(0,parseInt(st.value||'0',10)); again(); };
+      st.disabled=true;
       const lb=x=>{ const s2=el('span'); s2.style.cssText='font-size:11px;color:var(--ink-soft)'; s2.textContent=x; return s2; };
       row.append(tmS, lb('奉仕可能'), f, lb('〜'), t, lb('座席'), st);
       d.appendChild(row);
       host.appendChild(d);
     });
-    const add=el('button','btn'); add.textContent='＋ 奉仕者を追加';
+    const link=el('a'); link.href='https://docs.google.com/spreadsheets/d/1GMYwXdsYijqaf9b4dEu3DwjJo66axJGDiU__Mn58XlA/edit';
+    link.target='_blank'; link.textContent='📋 名簿タブを開いて編集する';
+    link.style.cssText='display:inline-block;border:1px solid var(--ink);background:var(--ink);color:#fff;'
+      +'border-radius:3px;padding:8px 12px;font-size:12.5px;text-decoration:none;margin-right:8px';
+    host.appendChild(link);
+    const add=el('button','btn'); add.style.display='none'; add.textContent='＋ 奉仕者を追加';
     add.style.cssText='border:1px dashed var(--rule-strong);background:#fff;border-radius:3px;padding:8px 12px;cursor:pointer;font-size:12.5px';
     add.onclick=()=>{
       ask('奉仕者を追加',[{label:'名前',value:'',ph:'例：山田 太郎'},{label:'会衆',value:'',ph:'例：新川会衆'}],v=>{
@@ -2807,7 +2832,7 @@ function bigSheet(title, innerHTML, onOk, okLabel){
 function showLoadPicker(b){
   const c=getChain(b.chainId);
   const cur={}; (b.load||[]).forEach(x=>{ cur[x.d+'|'+x.l]=x.q; });
-  const list=DOS.filter(d=>d.lines&&(d.day===state.day||c.loads.indexOf(d.id)>=0));
+  const list=DOS.filter(d=>d.lines&&d.lines.length);
   let html=list.length?'':'<p style="font-size:13px">この日のCO-31がありません。</p>';
   list.forEach(d=>{
     html+='<div class="pk"><div class="hd"><input type="checkbox" data-all="'+d.id+'">'
@@ -2815,7 +2840,7 @@ function showLoadPicker(b){
     d.lines.forEach(l=>{
       const k=d.id+'|'+l.id, on=cur[k]!==undefined;
       html+='<div class="ln"><input type="checkbox" data-k="'+k+'"'+(on?' checked':'')+'>'
-        +'<span class="nm">'+esc(l.name)+(l.size?'<br><span style="font-size:10px;color:var(--ink-soft)">'+esc(l.size)+'</span>':'')+'</span>'
+        +'<span class="nm"><b>'+esc(l.name)+'</b>'+(l.size?'<br><span style="font-size:10px;color:var(--ink-soft)">'+esc(l.size)+'</span>':'')+'</span>'
         +'<input type="number" min="1" max="'+l.qty+'" data-q="'+k+'" value="'+(on?cur[k]:l.qty)+'">'
         +'<span class="max">/ '+l.qty+'</span></div>';
     });
@@ -2856,7 +2881,7 @@ function showDropPicker(b){
     byDo[did].forEach(it=>{
       const k=it.d+'|'+it.l, sel=cur[k]!==undefined;
       html+='<div class="ln"><input type="checkbox" data-k="'+k+'"'+(sel?' checked':'')+'>'
-        +'<span class="nm">'+esc(it.name)+'</span>'
+        +'<span class="nm"><b>'+esc(it.name)+'</b></span>'
         +'<input type="number" min="1" max="'+it.q+'" data-q="'+k+'" value="'+(sel?cur[k]:it.q)+'">'
         +'<span class="max">/ '+it.q+'</span></div>';
     });
@@ -3286,17 +3311,7 @@ function openDetail(id){
       });
       menuEl.appendChild(bt);
     });
-    CREWS.forEach(cr=>{
-      const bt=el('button'); bt.style.textAlign='left';
-      const ng=cr.members.filter(m=>whoStatus(m,b)!=='ok').length;
-      bt.textContent='班：'+cr.name+'（'+cr.members.length+'名'+(ng?'・'+ng+'名は不可':'')+'）';
-      if(ng) bt.style.color='var(--alert)';
-      bt.addEventListener('click',()=>{ closeMenu();
-        cr.members.forEach(m=>{ if(b.staff.indexOf(m)<0) b.staff.push(m); });
-        renderAll();
-      });
-      menuEl.appendChild(bt);
-    });
+
     document.body.appendChild(menuEl);
     const rr=menuEl.getBoundingClientRect();
     menuEl.style.left=Math.max(8,Math.min(r.left,innerWidth-rr.width-10))+'px';
@@ -3368,7 +3383,7 @@ function openDo(did){
       +'</div>';
     html+='<span class="lab">品目</span><div class="cargo">'
       +(d.lines&&d.lines.length?d.lines.map(function(l){
-          return '<div class="ln"><span class="tx">'+esc(l.name)+' × '+l.qty
+          return '<div class="ln"><span class="tx"><b>'+esc(l.name)+'</b> × '+l.qty
             +(l.size?'<small>'+esc(l.size)+'</small>':'')+'</span></div>';
         }).join(''):'<div class="nil">品目なし</div>')
       +'</div>';
@@ -3433,6 +3448,13 @@ function syncCols(){
   const sc=$('#scroller');
   sc.addEventListener('scroll',syncCols,{passive:true});
   window.addEventListener('resize',syncCols);
+  /* 見えている位置の日付にタブを合わせる */
+  sc.addEventListener('scroll',function(){
+    if(state.view==='mind') return;
+    const t=TL_START+(sc.scrollLeft+sc.clientWidth/2)/state.ppm;
+    const d=dayOfT(t);
+    if(d&&d.id!==state.day){ state.day=d.id; renderDays(); renderRail(); saveSoon(); }
+  },{passive:true});
 })();
 
 $('#flag').addEventListener('click',showClashIssues);
@@ -3441,10 +3463,59 @@ $('#flag3').addEventListener('click',showFootIssues);
 $('#flag4').addEventListener('click',showCapIssues);
 
 /* ============================================================
+   自動保存（このブラウザに保存。再読み込みしても消えない）
+   ============================================================ */
+var SAVE_KEY='koutei_board_v1';
+var saveTimer=null;
+function saveBoard(){
+  try{
+    var data={
+      v:1, at:new Date().toISOString(),
+      LANES:LANES, CHAINS:CHAINS, BLOCKS:BLOCKS, PSHIFTS:PSHIFTS,
+      HOWS:HOWS, PLACES:PLACES, TEMPLATES:TEMPLATES, POS:POS,
+      day:state.day, view:state.view, ppm:state.ppm
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    var el2=$('#saveState');
+    if(el2){ el2.textContent='保存 '+hhmm(new Date().getHours()*60+new Date().getMinutes()); el2.dataset.state='ok'; }
+  }catch(e){}
+}
+function saveSoon(){ if(saveTimer) clearTimeout(saveTimer); saveTimer=setTimeout(saveBoard,600); }
+function restoreBoard(){
+  try{
+    var raw=localStorage.getItem(SAVE_KEY);
+    if(!raw) return false;
+    var d=JSON.parse(raw);
+    if(!d||d.v!==1) return false;
+    if(d.LANES&&d.LANES.length) LANES=d.LANES;
+    if(d.CHAINS) CHAINS=d.CHAINS;
+    if(d.BLOCKS) BLOCKS=d.BLOCKS;
+    if(d.PSHIFTS) PSHIFTS=d.PSHIFTS;
+    if(d.HOWS&&d.HOWS.length) HOWS=d.HOWS;
+    if(d.PLACES&&d.PLACES.length) PLACES=d.PLACES;
+    if(d.TEMPLATES&&d.TEMPLATES.length) TEMPLATES=d.TEMPLATES;
+    if(d.POS) POS=d.POS;
+    if(d.day) state.day=d.day;
+    if(d.view) state.view=d.view;
+    if(d.ppm) state.ppm=d.ppm;
+    return true;
+  }catch(e){ return false; }
+}
+function clearBoard(){
+  if(!confirm('この端末に保存した工程を全部消します。よろしいですか？')) return;
+  try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+  location.reload();
+}
+
+/* ============================================================
    実データの取込（CO-31 と 名簿）
    ============================================================ */
 var API_URL='https://script.google.com/macros/s/AKfycbw41gYVPhGvNCx5cQ-6XP9_j0qu7nxkTUdshD9hegrsLqCzjwoF504TyY-1dAkdAkTJ-A/exec';
 
+function dayLabelOf(id){
+  var d=DAYS.filter(function(x){return x.id===id;})[0];
+  return d?d.label.split(' ')[0]:(id||'');
+}
 function doTimeLabel(d){
   if(!d) return '';
   if(d.at) return d.at+(d.atEnd?'〜'+d.atEnd:'')+(d.after?'以降':'');
@@ -3455,10 +3526,10 @@ function applyCO31(list){
   if(!list||!list.length) return 0;
   DOS=list.map(function(r,i){
     var lines=(r.lines||[]).map(function(l,j){
-      return {id:'k'+i+'_'+j, name:l.name, qty:l.qty||1, size:l.size||''};
+      return {id:'co'+(r.no||i)+'_'+j, name:l.name, qty:l.qty||1, size:l.size||''};
     });
     return {
-      id:'k'+i,
+      id:'co'+(r.no||i),
       no:r.no||'', dept:r.dept||'',
       day:r.day||'0827',
       at:r.at||'', period:r.period||'', atEnd:r.atEnd||'', after:!!r.after, timeText:r.timeText||'',
@@ -3466,7 +3537,7 @@ function applyCO31(list){
       from:(r.fromVenue||r.from||''), fromText:(r.from||''),
       to:(r.toVenue||r.to||''),     toDetail:(r.toDetail||r.to||''),
       note:r.note||'',
-      items:lines.map(function(l){return l.name+l.qty;}).join(' / '),
+      items:lines.map(function(l){return l.name+'×'+l.qty;}).join('　/　'),
       lines:lines
     };
   });
@@ -3488,13 +3559,20 @@ function applyRoster(list){
 }
 function afterLoad(js){
   var n1=applyCO31(js.co31), n2=applyRoster(js.roster);
+  /* 古いデプロイだと配送先が部門名のまま届く（部門の文字が入っていたら警告） */
+  var oldish=(js.co31||[]).filter(function(r){ return !r.whenRaw && !r.toVenue; }).length;
+  if(n1&&oldish>n1*0.5){
+    setTimeout(function(){
+      toast('GASのデプロイが古いようです。デプロイを管理→新バージョン→デプロイ をしてから「⟳取込」を押してください。');
+    },1200);
+  }
   var st=$('#dataState');
   st.textContent='実データ CO-31 '+n1+'件 / 名簿 '+n2+'名';
   st.dataset.state='live';
   /* 場所を実データから足す */
   DOS.forEach(function(d){ if(d.from) ensurePlace(d.from); if(d.to) ensurePlace(d.to); });
   state.check=null; state.panel=null; state.sel=null;
-  renderAll();
+  renderAll(); saveBoard();
   var msg=[];
   if(js.co31Error) msg.push('CO-31: '+js.co31Error);
   if(js.rosterError) msg.push('名簿: '+js.rosterError);
@@ -3528,7 +3606,10 @@ function pasteSheet(err){
 $('#btnLoad').addEventListener('click',loadLive);
 
 /* ---------- init ---------- */
+var restored=restoreBoard();
 renderDays(); renderViews(); renderTMFilter(); setZoom(state.ppm); renderAll();
+$('#btnClear').addEventListener('click',clearBoard);
+if(restored) setTimeout(function(){ toast('前回の続きを開きました。'); },600);
 setTimeout(loadLive,300);
 scrollToDay(state.day,false);
 </script>

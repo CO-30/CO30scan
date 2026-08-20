@@ -457,6 +457,14 @@
 .dir.load{color:var(--ok)}     /* 積込 = 緑 ▼ */
 .dir.unload{color:var(--do)}   /* 荷降ろし = 橙 ▲ */
 .chip.how .dir{font-size:15px}
+  /* v45: 車両行の足チップ（引取／停泊＋帰り） */
+.lane .lfcap{position:absolute;top:calc(50% - 11px);height:22px;z-index:5;border:1px solid var(--rule-strong);
+  background:#fff;border-radius:12px;font-size:10.5px;padding:0 9px;line-height:20px;white-space:nowrap;
+  cursor:pointer;color:var(--ink);box-shadow:0 1px 3px rgba(22,34,46,.16)}
+.lane .lfcap.arr{border-left:4px solid var(--how)}   /* 引取＝緑 */
+.lane .lfcap.ret{border-left:4px solid var(--do)}    /* 停泊/帰り＝橙 */
+.lane .lfcap:not(.set){border-style:dashed;color:var(--alert);font-weight:700}  /* 未定＝赤破線 */
+.lane .lfcap:hover{border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -558,6 +566,96 @@ const FLEET={
   '0831':['2TU']
 };
 
+// ===== 車両ごと・日ごとの「足」（引取の足／停泊＋帰りの足） =====
+let LANEFOOT = {};   // 'laneId|dayId' -> {arrive:{mode,by}|null, park:'保管所名'|null, home:{mode,by}|null}
+function laneFoot(laneId, dId){
+  const k=laneId+'|'+dId;
+  if(!LANEFOOT[k]) LANEFOOT[k]={arrive:null, park:null, home:null};
+  return LANEFOOT[k];
+}
+function footShort(s){ s=String(s||''); return s.length>8 ? s.slice(0,7)+'…' : s; }
+function arriveLabel(lf){
+  const a=lf.arrive; if(!a) return '引取の足?';
+  return {own:'自車で',ride:'同乗'+(a.by?'('+footShort(a.by)+')':''),sogei:'送迎で',genchi:'現地集合'}[a.mode]||'?';
+}
+function homeLabel(lf){
+  const h=lf.home; if(!h) return '帰りの足?';
+  return {own:'自車',ride:'同乗'+(h.by?'('+footShort(h.by)+')':''),sogei:'送迎',genchi:'現地解散'}[h.mode]||'?';
+}
+function openLaneMenu(ev, items){
+  closeMenu(); menuEl=el('div','menu'); menuEl.style.gridTemplateColumns='1fr';
+  items.filter(Boolean).forEach(function(it){
+    const b=el('button'); b.style.textAlign='left'; b.textContent=it.label;
+    b.addEventListener('click',function(){ closeMenu(); it.fn(); renderAll(); });
+    menuEl.appendChild(b);
+  });
+  document.body.appendChild(menuEl);
+  const r=menuEl.getBoundingClientRect();
+  menuEl.style.left=Math.max(8,Math.min(ev.clientX,innerWidth-r.width-10))+'px';
+  menuEl.style.top =Math.max(8,Math.min(ev.clientY,innerHeight-r.height-10))+'px';
+  setTimeout(function(){ document.addEventListener('pointerdown',outside,{once:true}); },0);
+}
+function pickLaneArrive(ev, ln, dId){
+  const lf=laneFoot(ln.id,dId);
+  openLaneMenu(ev, [
+    {label:'🚙 自分の車で行く', fn:function(){ lf.arrive={mode:'own'}; }},
+    {label:'🚗 だれかの車に同乗', fn:function(){ ask('同乗する車',[{label:'運転者/車名', value:(lf.arrive&&lf.arrive.by)||'', ph:'例：田村の車', picks:PEOPLE.map(function(p){return p.name.split(' ')[0];})}],function(v){ lf.arrive={mode:'ride',by:v[0]}; renderAll(); }); }},
+    {label:'🚐 送迎してもらう', fn:function(){ lf.arrive={mode:'sogei'}; }},
+    {label:'🏁 現地集合', fn:function(){ lf.arrive={mode:'genchi'}; }},
+    lf.arrive?{label:'↺ 引取の足を決め直す', fn:function(){ lf.arrive=null; }}:null
+  ]);
+}
+function pickLaneReturn(ev, ln, dId){
+  const lf=laneFoot(ln.id,dId);
+  openLaneMenu(ev, [
+    {label:'🅿️ 停泊先（保管所）を選ぶ', fn:function(){ showPlaceMenu(ev.clientX, ev.clientY, function(pl){ lf.park=pl; renderAll(); }); }},
+    {label:'＋ 新しい保管所を追加', fn:function(){ ask('保管所を追加',[{label:'保管所の名前', ph:'例：○○倉庫'}],function(v){ ensurePlace(v[0]); lf.park=v[0]; renderAll(); }); }},
+    {label:'🚙 帰りは自分の車', fn:function(){ lf.home={mode:'own'}; }},
+    {label:'🚗 帰りは同乗', fn:function(){ ask('同乗する車',[{label:'運転者/車名', value:(lf.home&&lf.home.by)||'', picks:PEOPLE.map(function(p){return p.name.split(' ')[0];})}],function(v){ lf.home={mode:'ride',by:v[0]}; renderAll(); }); }},
+    {label:'🚐 保管所から家まで送迎便を作る', fn:function(){ makeHomeRideFromPark(ln, dId); }},
+    {label:'🏁 現地解散', fn:function(){ lf.home={mode:'genchi'}; }},
+    (lf.park||lf.home)?{label:'↺ 停泊・帰りをクリア', fn:function(){ lf.park=null; lf.home=null; }}:null
+  ]);
+}
+function makeHomeRideFromPark(ln, dId){
+  const lf=laneFoot(ln.id,dId);
+  if(!lf.park){ toast('先に停泊先（保管所）を選んでください。'); return; }
+  const arr=BLOCKS.filter(function(b){ return b.laneId===ln.id && dayOfT(b.t).id===dId; }).sort(function(a,b){ return a.t-b.t; });
+  if(!arr.length){ toast('この日の予定がありません。'); return; }
+  const last=arr[arr.length-1];
+  const lane=ensureLane('送迎車','車両');
+  const rb=newRide(lane.id, last.t+last.dur+5, [lf.park, '自宅・集合'], last.staff.slice());
+  lf.home={mode:'sogei'};
+  openDetail(rb.id);
+  toast('保管所から自宅への送迎便を作りました。停車地は①で足せます。');
+}
+function renderLaneFoot(){
+  LANES.forEach(function(ln){
+    const lane=document.querySelector('.lane[data-lane="'+ln.id+'"]');
+    if(!lane) return;
+    const bs=BLOCKS.filter(function(b){ return b.laneId===ln.id; }).sort(function(a,b){ return a.t-b.t; });
+    if(!bs.length) return;
+    const byDay={};
+    bs.forEach(function(b){ const d=dayOfT(b.t).id; (byDay[d]=byDay[d]||[]).push(b); });
+    Object.keys(byDay).forEach(function(dId){
+      const arr=byDay[dId], first=arr[0], last=arr[arr.length-1];
+      const lf=laneFoot(ln.id, dId);
+      const L=el('button','lfcap arr'+(lf.arrive?' set':''));
+      L.style.left=Math.max(0,m2x(first.t)-118)+'px';
+      L.innerHTML='🔑 '+arriveLabel(lf);
+      L.title='引取の足（'+(first.place||'集合')+'へ）'+dayOfT(first.t).label;
+      L.addEventListener('click',function(ev){ ev.stopPropagation(); pickLaneArrive(ev, ln, dId); });
+      lane.appendChild(L);
+      const R=el('button','lfcap ret'+((lf.park||lf.home)?' set':''));
+      R.style.left=(m2x(last.t+last.dur)+8)+'px';
+      R.innerHTML='🅿️ '+(lf.park?footShort(lf.park):'停泊先?')+' ／ 🏠 '+homeLabel(lf);
+      R.title='停泊＋帰りの足 '+dayOfT(last.t).label;
+      R.addEventListener('click',function(ev){ ev.stopPropagation(); pickLaneReturn(ev, ln, dId); });
+      lane.appendChild(R);
+    });
+  });
+}
+  
 let DOS=[
   {id:'d1', day:'0827', at:'09:00', dept:'設営', no:'No.112', from:'コンベンション', to:'新川王国会館', items:'長机12 / パイプ椅子40',
    lines:[{id:'d1a',name:'長机',qty:12},{id:'d1b',name:'パイプ椅子',qty:40}]},
@@ -1225,6 +1323,7 @@ function renderBlocks(){
     });
   });
   if(state.view==='lane') renderLanePeople();
+    if(state.view==='lane') renderLaneFoot();
   if(state.view==='lane'){
     CHAINS.forEach(c=>{
       const list=steps(c.id); if(!list.length) return;
@@ -3716,6 +3815,7 @@ var saveTimer=null;
 function saveBoard(){
   try{
     var data={ v:1, at:new Date().toISOString(),
+      LANEFOOT:LANEFOOT,
       LANES:LANES, CHAINS:CHAINS, BLOCKS:BLOCKS, PSHIFTS:PSHIFTS,
       HOWS:HOWS, PLACES:PLACES, TEMPLATES:TEMPLATES, POS:POS,
       day:state.day, view:state.view, ppm:state.ppm };
@@ -3737,6 +3837,7 @@ function restoreBoard(){
     if(d.PLACES&&d.PLACES.length) PLACES=d.PLACES;
     if(d.TEMPLATES&&d.TEMPLATES.length) TEMPLATES=d.TEMPLATES;
     if(d.POS) POS=d.POS;
+    if(d.LANEFOOT) LANEFOOT=d.LANEFOOT;
     if(d.day) state.day=d.day;
     if(d.view) state.view=d.view;
     if(d.ppm) state.ppm=d.ppm;
@@ -3817,6 +3918,7 @@ function planPayload(){
   return {
     v:1, savedAt:new Date().toISOString(),
     LANES:LANES, CHAINS:CHAINS, BLOCKS:BLOCKS, PSHIFTS:PSHIFTS,
+    LANEFOOT:LANEFOOT,
     HOWS:HOWS.filter(function(h){return h.custom;}), PLACES:PLACES, rows:rows
   };
 }
@@ -3840,6 +3942,7 @@ function applyPlan(p){
   if(p.BLOCKS) BLOCKS=p.BLOCKS;
   if(p.PSHIFTS) PSHIFTS=p.PSHIFTS;
   if(p.PLACES&&p.PLACES.length) PLACES=p.PLACES;
+  if(p.LANEFOOT) LANEFOOT=p.LANEFOOT;
   (p.HOWS||[]).forEach(function(h){ if(!getHow(h.id)) HOWS.push(h); });
   return true;
 }

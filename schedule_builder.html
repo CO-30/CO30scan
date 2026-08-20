@@ -3479,13 +3479,7 @@ function openDetail(id){
       renderRail(); toast('③の上に型として足しました。');
     });
   });
-  $('#s-crew').addEventListener('click',()=>{
-    if(!b.staff.length){ toast('先に担当者を入れてください。'); return; }
-    ask('この担当を班にする',[{label:'班の名前',value:'',ph:'例：積込班B'}],v=>{
-      CREWS.push({id:uid('cr'), name:v[0], members:b.staff.slice()});
-      renderRail(); toast('④の上に班として足しました。');
-    });
-  });
+
   $('#f-tm').addEventListener('change',ev=>{
     const v=ev.target.value;
     steps(b.chainId).forEach(x=>{ x.tm=v; });

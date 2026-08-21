@@ -89,6 +89,14 @@
       .cancelled-badge { display: block !important; }
     }
     .bulk-check-buttons { display: flex; gap: 6px; }
+        /* 🆕 ラベル張替(要貼付/要撤去) */
+    .label-item.need-item { border: 2px solid #2c5f8a !important; background: #eaf2f8; }
+    .need-badge { font-size: 10px; font-weight: bold; color: #fff; background: #2c5f8a; padding: 2px 6px; border-radius: 6px; }
+    .retire-banner { background: #fbe9e9; border: 1px solid #ac3535; color: #ac3535; font-size: 12.5px; border-radius: 8px; padding: 10px 14px; margin: 12px 20px 0; line-height: 1.6; }
+    @media print {
+      .need-badge { display: none !important; }
+      .label-item.need-item { border-width: 0.3pt !important; border-style: dashed !important; border-color: #aaa !important; background: #fff !important; }
+    }
     .btn-bulk-check { background: #eef2f5; color: #444; border: 1px solid #dde3e9; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
     .btn-bulk-check:hover { background: #dde3e9; }
 
@@ -159,9 +167,14 @@
     <button type="button" class="btn-bulk-check" onclick="setAllChecked(false)">☐ 全解除</button>
   </div>
   <span class="filter-count" id="filter-count"></span>
+  <label class="label-check-row" style="font-size:13px;font-weight:bold;color:#2c5f8a;">
+    <input type="checkbox" id="f-labelneed"> 🆕 要貼付だけ
+  </label>
+  <button type="button" class="btn-bulk-check" id="btn-mark-attached">🗑 表示中を対応済みに</button>
   <button class="btn-print" onclick="window.print()">🖨️ チェックした分だけ印刷</button>
 </div>
-
+  
+<div class="retire-banner print-hide" id="retire-banner" style="display:none;"></div>
 <div class="status" id="status">⏳ データを取得中...</div>
 <div class="preview-area" id="preview-area" style="display:none;">
   <div class="size-section" id="section-xs">
@@ -613,8 +626,48 @@ function getFiltered() {
    ========================================================= */
 var QR_PX = { xs: 100, s: 200, m: 400, l: 800 };
 
+/* 🆕 要撤去(退役)コードを「剥がすリスト」として表示する */
+function renderRetireBanner(retired) {
+  var el = document.getElementById('retire-banner');
+  if (!el) return;
+  if (!retired || retired.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  var codes = retired.map(function(it){ return it.code; });
+  el.style.display = 'block';
+  el.innerHTML = '🏷️ 剥がすラベル(要撤去) ' + retired.length + '件: ' +
+    codes.map(function(c){ return escapeHtmlDoc(c); }).join('、') +
+    '<br><small>これらは修正で古くなったコードです。物品から剥がしてください(印刷対象からは除外しています)。</small>';
+}
+
+/* 🆕 clearLabelStatus をPOSTで呼ぶ */
+async function gasPostLabels(action, payload) {
+  var res = await fetch(GAS_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: action, payload: payload }) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return await res.json();
+}
+
+/* 🆕 表示中の要貼付を「対応済み(貼付済み)」にして一覧から消す */
+async function onMarkAttached() {
+  var visible = getFiltered().filter(function(it){ return it.labelStatus === '要貼付'; }).map(function(it){ return it.code; });
+  if (visible.length === 0) { alert('表示中に「要貼付」のラベルはありません'); return; }
+  if (!confirm(visible.length + '件を「対応済み(貼付済み)」にして一覧から消します。よろしいですか？')) return;
+  try {
+    var res = await gasPostLabels('clearLabelStatus', { codes: visible });
+    if (res && res.success) {
+      visible.forEach(function(code){ var it = allItems.find(function(x){ return x.code === code; }); if (it) it.labelStatus = ''; });
+      render();
+    } else { alert('失敗: ' + (res && res.error ? res.error : '不明')); }
+  } catch (e) { alert('通信エラー: ' + e.message); }
+}
+  
 function render() {
-  var items = getFiltered();
+  var all = getFiltered();
+  // 🆕 要撤去(退役)ラベルは印刷しない。剥がすべきコードとしてバナーに出す。
+  var retired = all.filter(function(it){ return it.labelStatus === '要撤去'; });
+  renderRetireBanner(retired);
+  var items = all.filter(function(it){ return it.labelStatus !== '要撤去'; });
+  var needEl = document.getElementById('f-labelneed');
+  if (needEl && needEl.checked) items = items.filter(function(it){ return it.labelStatus === '要貼付'; });
+
   var checkedCount = items.filter(function(item) { return checkedByCode[item.code] !== false; }).length;
   document.getElementById('filter-count').textContent = checkedCount + ' / ' + items.length + ' 枚(印刷対象/表示中)';
   document.getElementById('status').style.display = 'none';
@@ -626,7 +679,7 @@ function render() {
   if (items.length === 0) {
     area.style.display = 'none';
     document.getElementById('status').style.display = 'block';
-    document.getElementById('status').textContent = '該当する物品がありません';
+    document.getElementById('status').textContent = retired.length ? '印刷対象のラベルはありません(要撤去のみ)' : '該当する物品がありません';
     return;
   }
   area.style.display = 'block';
@@ -641,7 +694,8 @@ function render() {
     var div = document.createElement('div');
     div.className = 'label-item'
       + (checkedByCode[item.code] ? '' : ' unchecked')
-      + (item.cancelled ? ' cancelled-item' : '');
+      + (item.cancelled ? ' cancelled-item' : '')
+      + (item.labelStatus === '要貼付' ? ' need-item' : '');
     div.dataset.code = item.code;
 
     var px = QR_PX[size];
@@ -663,6 +717,11 @@ function render() {
       warn.className = 'cancelled-badge';
       warn.textContent = '⚠️ 取消済みの依頼です';
       div.appendChild(warn);
+    } else if (item.labelStatus === '要貼付') {
+      var nb = document.createElement('div');
+      nb.className = 'need-badge';
+      nb.textContent = '🆕 要貼付';
+      div.appendChild(nb);
     }
 
     var code = document.createElement('div');
@@ -715,6 +774,8 @@ document.getElementById('f-location').addEventListener('change', render);
 document.getElementById('f-dept').addEventListener('change', render);
 document.getElementById('f-team').addEventListener('change', render);
 document.getElementById('f-search').addEventListener('input', render);
+document.getElementById('f-labelneed').addEventListener('change', render);
+document.getElementById('btn-mark-attached').addEventListener('click', onMarkAttached);  
 
 /* 全選択/全解除(現在のフィルターに表示中のものだけ対象) */
 function setAllChecked(value) {

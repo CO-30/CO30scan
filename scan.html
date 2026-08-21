@@ -114,6 +114,8 @@
       text-align: center; color: #aaa;
       padding: 40px 20px; font-size: 14px; line-height: 1.6;
     }
+    .item-card.superseded-card { border-left-color: #ac3535 !important; opacity: 0.75; }
+    
     .item-card {
       background: #fff;
       border-radius: 12px;
@@ -675,7 +677,7 @@
     /* =========================================================
        リスト描画(コードごとに1枚。最近スキャンしたものを先頭に)
        ========================================================= */
-    function renderList() {
+        function renderList() {
       const listContainer = document.getElementById("itemList");
       const matchCount = displayItems.filter(it => it.lifecycle === currentLifecycleMode).length;
       document.getElementById("totalQty").innerText = matchCount;
@@ -706,15 +708,21 @@
         const isLatest = item.code === latestCode;
 
         const card = document.createElement("div");
-        card.className = `item-card ${isSyncing ? 'syncing' : ''} ${isLatest ? 'latest' : ''} ${item.cancelled ? 'cancelled-card' : ''}`.trim();
-        card.style.borderLeftColor = item.cancelled ? '#ac3535' : info.color;
+        card.className = `item-card ${isSyncing ? 'syncing' : ''} ${isLatest ? 'latest' : ''} ${item.cancelled ? 'cancelled-card' : ''} ${item.superseded ? 'superseded-card' : ''}`.trim();
+        card.style.borderLeftColor = (item.cancelled || item.superseded) ? '#ac3535' : info.color;
+
+        const badgeHtml = item.cancelled
+          ? '<div class="lifecycle-badge" style="background:#ac3535;">🚫 取消済みの依頼</div>'
+          : (item.superseded
+              ? '<div class="lifecycle-badge" style="background:#ac3535;">🏷️ 古いラベル(要撤去・剥がす)</div>'
+              : `<div class="lifecycle-badge ${info.badgeCls}">${info.icon} ${info.label}</div>`);
 
         card.innerHTML = `
           <div class="item-info">
             <div class="item-name">${escapeHtml(item.name)}</div>
             <div class="item-code">コード: ${escapeHtml(item.code)}</div>
             ${item.dept ? `<div class="item-dept-tag">依頼部門: ${escapeHtml(item.dept)}${item.reqNo ? ' (No.' + escapeHtml(item.reqNo) + ')' : ''}</div>` : ''}
-            ${item.cancelled ? '<div class="lifecycle-badge" style="background:#ac3535;">🚫 取消済みの依頼</div>' : `<div class="lifecycle-badge ${info.badgeCls}">${info.icon} ${info.label}</div>`}
+            ${badgeHtml}
             ${item.requestNote ? `<button type="button" class="note-badge" data-code="${escapeHtml(item.code)}">📌 依頼元からの特記事項あり(タップで表示)</button>` : ''}
             <input type="text" class="remarks-input" list="rentalRemarkDatalist" placeholder="📝 備考(取得場所など・任意)" value="${escapeHtml(item.remarks || '')}" data-code="${escapeHtml(item.code)}">
           </div>`;
@@ -918,7 +926,7 @@
       }
     }
 
-    function renderRequestListBody() {
+        function renderRequestListBody() {
       const body = document.getElementById('requestListBody');
       const reqs = lastRequestListData || [];
       if (!reqs.length) {
@@ -929,7 +937,8 @@
       reqs.forEach(r => {
         let totalCodes = 0, doneCodes = 0;
         (r.items || []).forEach(it => {
-          (it.codes || []).forEach(c => { totalCodes++; if (c.lifecycle === currentLifecycleMode) doneCodes++; });
+          const liveCodes = (it.codes || []).filter(c => String(c.remarks || '').indexOf('⚠️内容修正により差し替え') === -1); // 🆕 退役コード除外
+          liveCodes.forEach(c => { totalCodes++; if (c.lifecycle === currentLifecycleMode) doneCodes++; });
         });
         const modeLabel = LIFECYCLE_MODES[currentLifecycleMode].label;
         const progressHtml = totalCodes > 0
@@ -937,9 +946,10 @@
           : `<span class="req-progress muted">CO30未作成</span>`;
 
         const itemsHtml = (r.items || []).map(it => {
+          const liveCodes = (it.codes || []).filter(c => String(c.remarks || '').indexOf('⚠️内容修正により差し替え') === -1); // 🆕 退役コード除外
           let rowsHtml;
-          if (it.codes && it.codes.length > 0) {
-            rowsHtml = it.codes.map(c => {
+          if (liveCodes.length > 0) {
+            rowsHtml = liveCodes.map(c => {
               const done = c.lifecycle === currentLifecycleMode;
               const lcInfo = LIFECYCLE_MODES[c.lifecycle] || LIFECYCLE_MODES['未処理'];
               return `<div class="code-row ${done ? 'code-row-done' : ''}">
@@ -992,6 +1002,7 @@
       const map = {};
       const order = [];
       items.forEach(it => {
+        if (it.cancelled || it.superseded) return; // 🆕 取消済み・退役(要撤去)は階層表示から除外
         if (it.cancelled) return; // 🆕 取消済みの依頼は階層表示から除外(スキャン自体もブロックされているため)
         const cleanName = baseItemName_(it.name);
         const k = it.location + '\u0001' + cleanName + '\u0001' + it.dept;
@@ -1277,7 +1288,7 @@
     /* =========================================================
        スキャン成功時の共通処理 → 選択中のライフサイクルへ更新
        ========================================================= */
-    function onScanSuccess(decodedText) {
+        function onScanSuccess(decodedText) {
       const cleanCode = (decodedText || "").trim();
       if (!cleanCode) return;
 
@@ -1305,6 +1316,14 @@
       // 🆕 取消済みの依頼に紐づく物品はスキャンをブロックする
       if (item.cancelled) {
         showToast(`🚫 この物品は取消済みの依頼のものです: ${item.name}`, 'error');
+        playErrorBeep();
+        flashScannerFrame('error');
+        return;
+      }
+
+      // 🆕 修正で古くなった(要撤去)ラベルはブロックし、剥がすよう促す
+      if (item.superseded || item.labelStatus === '要撤去') {
+        showToast(`🏷️ このラベルは古い版です。剥がしてください: ${item.name}`, 'error');
         playErrorBeep();
         flashScannerFrame('error');
         return;

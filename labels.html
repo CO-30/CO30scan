@@ -89,13 +89,22 @@
       .cancelled-badge { display: block !important; }
     }
     .bulk-check-buttons { display: flex; gap: 6px; }
-        /* 🆕 ラベル張替(要貼付/要撤去) */
+            /* 🆕 ラベル張替(要貼付/要撤去/張替サマリー) */
     .label-item.need-item { border: 2px solid #2c5f8a !important; background: #eaf2f8; }
     .need-badge { font-size: 10px; font-weight: bold; color: #fff; background: #2c5f8a; padding: 2px 6px; border-radius: 6px; }
-    .retire-banner { background: #fbe9e9; border: 1px solid #ac3535; color: #ac3535; font-size: 12.5px; border-radius: 8px; padding: 10px 14px; margin: 12px 20px 0; line-height: 1.6; }
+    .label-item.retire-item { border: 2px solid #ac3535 !important; background: #fbe9e9; }
+    .retire-badge { font-size: 10px; font-weight: bold; color: #fff; background: #ac3535; padding: 2px 6px; border-radius: 6px; }
+    .swap-panel { background: #fff; border: 1px solid #dde3e9; border-radius: 8px; padding: 12px 14px; margin: 12px 20px 0; font-size: 13px; line-height: 1.8; }
+    .swap-panel h4 { margin: 0 0 8px; font-size: 13px; color: #333; }
+    .swap-req { padding: 5px 0; border-top: 1px dashed #eee; }
+    .swap-req .sr-title { font-weight: bold; color: #333; }
+    .swap-remove { color: #ac3535; font-family: "SF Mono","Consolas",monospace; font-size: 12px; }
+    .swap-add { color: #2c5f8a; font-family: "SF Mono","Consolas",monospace; font-size: 12px; }
     @media print {
       .need-badge { display: none !important; }
       .label-item.need-item { border-width: 0.3pt !important; border-style: dashed !important; border-color: #aaa !important; background: #fff !important; }
+      .label-item.retire-item { display: none !important; }  /* 要撤去は絶対に印刷しない */
+      .swap-panel { display: none !important; }
     }
     .btn-bulk-check { background: #eef2f5; color: #444; border: 1px solid #dde3e9; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
     .btn-bulk-check:hover { background: #dde3e9; }
@@ -170,7 +179,7 @@
   <label class="label-check-row" style="font-size:13px;font-weight:bold;color:#2c5f8a;">
     <input type="checkbox" id="f-labelneed"> 🆕 要貼付だけ
   </label>
-  <button type="button" class="btn-bulk-check" id="btn-mark-attached">🗑 表示中を対応済みに</button>
+   <button type="button" class="btn-bulk-check" id="btn-mark-attached">✅ 貼付済みにする（要貼付表示を消す）</button>
   <button class="btn-print" onclick="window.print()">🖨️ チェックした分だけ印刷</button>
 </div>
   
@@ -626,16 +635,34 @@ function getFiltered() {
    ========================================================= */
 var QR_PX = { xs: 100, s: 200, m: 400, l: 800 };
 
-/* 🆕 要撤去(退役)コードを「剥がすリスト」として表示する */
-function renderRetireBanner(retired) {
+// 🆕 旧⇨新の張替サマリーを描画(依頼No.ごと)。取消のretireBannerの置き換え。
+function renderSwapPanel(all) {
   var el = document.getElementById('retire-banner');
   if (!el) return;
-  if (!retired || retired.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  var codes = retired.map(function(it){ return it.code; });
+  var changed = all.filter(function(it){ return it.labelStatus === '要貼付' || it.labelStatus === '要撤去'; });
+  if (changed.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  var byReq = {}, order = [];
+  changed.forEach(function(it){
+    var key = (it.reqNo || '(番号なし)') + '\u0001' + (it.dept || '');
+    if (!byReq[key]) { byReq[key] = { reqNo: it.reqNo || '(番号なし)', dept: it.dept || '', remove: [], add: [] }; order.push(key); }
+    (it.labelStatus === '要撤去' ? byReq[key].remove : byReq[key].add).push(it);
+  });
+  function codes(list){ return list.map(function(x){ return escapeHtmlDoc(x.code) + '（' + escapeHtmlDoc(x.name) + '）'; }).join('、'); }
+  var html = '<h4>🔁 張り替え作業（表示中の分）</h4>';
+  order.forEach(function(key){
+    var g = byReq[key];
+    var head = 'No.' + escapeHtmlDoc(g.reqNo) + (g.dept ? '（' + escapeHtmlDoc(g.dept) + '）' : '');
+    if (g.remove.length && g.add.length) {
+      html += '<div class="swap-req"><span class="sr-title">🔁 張替 ' + head + '：</span> <span class="swap-remove">' + codes(g.remove) + '</span> ⇨ <span class="swap-add">' + codes(g.add) + '</span></div>';
+    } else if (g.remove.length) {
+      html += '<div class="swap-req"><span class="sr-title">🗑 撤去 ' + head + '：</span> <span class="swap-remove">' + codes(g.remove) + '</span> を剥がす</div>';
+    } else {
+      html += '<div class="swap-req"><span class="sr-title">🆕 追加 ' + head + '：</span> <span class="swap-add">' + codes(g.add) + '</span> を貼る</div>';
+    }
+  });
+  el.className = 'swap-panel print-hide';
   el.style.display = 'block';
-  el.innerHTML = '🏷️ 剥がすラベル(要撤去) ' + retired.length + '件: ' +
-    codes.map(function(c){ return escapeHtmlDoc(c); }).join('、') +
-    '<br><small>これらは修正で古くなったコードです。物品から剥がしてください(印刷対象からは除外しています)。</small>';
+  el.innerHTML = html;
 }
 
 /* 🆕 clearLabelStatus をPOSTで呼ぶ */
@@ -645,15 +672,15 @@ async function gasPostLabels(action, payload) {
   return await res.json();
 }
 
-/* 🆕 表示中の要貼付を「対応済み(貼付済み)」にして一覧から消す */
+// 🆕 印刷対象(チェック済み)の要貼付だけを「貼付済み」にして表示から消す
 async function onMarkAttached() {
-  var visible = getFiltered().filter(function(it){ return it.labelStatus === '要貼付'; }).map(function(it){ return it.code; });
-  if (visible.length === 0) { alert('表示中に「要貼付」のラベルはありません'); return; }
-  if (!confirm(visible.length + '件を「対応済み(貼付済み)」にして一覧から消します。よろしいですか？')) return;
+  var targets = getFiltered().filter(function(it){ return it.labelStatus === '要貼付' && checkedByCode[it.code] !== false; }).map(function(it){ return it.code; });
+  if (targets.length === 0) { alert('印刷対象(チェック済み)の「要貼付」ラベルがありません'); return; }
+  if (!confirm('印刷して貼付した ' + targets.length + '件を「貼付済み」にして、要貼付表示を消します。よろしいですか？')) return;
   try {
-    var res = await gasPostLabels('clearLabelStatus', { codes: visible });
+    var res = await gasPostLabels('clearLabelStatus', { codes: targets });
     if (res && res.success) {
-      visible.forEach(function(code){ var it = allItems.find(function(x){ return x.code === code; }); if (it) it.labelStatus = ''; });
+      targets.forEach(function(code){ var it = allItems.find(function(x){ return x.code === code; }); if (it) it.labelStatus = ''; });
       render();
     } else { alert('失敗: ' + (res && res.error ? res.error : '不明')); }
   } catch (e) { alert('通信エラー: ' + e.message); }
@@ -661,15 +688,14 @@ async function onMarkAttached() {
   
 function render() {
   var all = getFiltered();
-  // 🆕 要撤去(退役)ラベルは印刷しない。剥がすべきコードとしてバナーに出す。
-  var retired = all.filter(function(it){ return it.labelStatus === '要撤去'; });
-  renderRetireBanner(retired);
-  var items = all.filter(function(it){ return it.labelStatus !== '要撤去'; });
+  renderSwapPanel(all);
+
+  var items = all.slice(); // 🆕 要撤去も表示(取消と同様に無効カード)
   var needEl = document.getElementById('f-labelneed');
   if (needEl && needEl.checked) items = items.filter(function(it){ return it.labelStatus === '要貼付'; });
 
-  var checkedCount = items.filter(function(item) { return checkedByCode[item.code] !== false; }).length;
-  document.getElementById('filter-count').textContent = checkedCount + ' / ' + items.length + ' 枚(印刷対象/表示中)';
+  var printableCount = items.filter(function(item){ return item.labelStatus !== '要撤去' && checkedByCode[item.code] !== false; }).length;
+  document.getElementById('filter-count').textContent = printableCount + ' 枚(印刷対象) / ' + items.length + ' 枚(表示中)';
   document.getElementById('status').style.display = 'none';
   var area = document.getElementById('preview-area');
 
@@ -679,7 +705,7 @@ function render() {
   if (items.length === 0) {
     area.style.display = 'none';
     document.getElementById('status').style.display = 'block';
-    document.getElementById('status').textContent = retired.length ? '印刷対象のラベルはありません(要撤去のみ)' : '該当する物品がありません';
+    document.getElementById('status').textContent = '該当する物品がありません';
     return;
   }
   area.style.display = 'block';
@@ -689,12 +715,14 @@ function render() {
   items.forEach(function(item) {
     var size = sizeByCode[item.code] || 's';
     counts[size]++;
-    if (checkedByCode[item.code] === undefined) checkedByCode[item.code] = !item.cancelled;
+    var isRetire = item.labelStatus === '要撤去';
+    if (checkedByCode[item.code] === undefined) checkedByCode[item.code] = !(item.cancelled || isRetire);
 
     var div = document.createElement('div');
     div.className = 'label-item'
       + (checkedByCode[item.code] ? '' : ' unchecked')
       + (item.cancelled ? ' cancelled-item' : '')
+      + (isRetire ? ' retire-item' : '')
       + (item.labelStatus === '要貼付' ? ' need-item' : '');
     div.dataset.code = item.code;
 
@@ -702,63 +730,37 @@ function render() {
     var img = document.createElement('img');
     img.className = 'qr-img';
     img.alt = item.code;
-    img.src = 'https://api.qrserver.com/v1/create-qr-code/'
-            + '?size=' + px + 'x' + px
-            + '&data=' + encodeURIComponent(item.code)
-            + '&margin=1';
-    img.onerror = function() {
-      this.style.cssText = 'width:80px;height:80px;background:#eee;display:block;';
-      this.title = 'QR取得失敗: ' + item.code;
-    };
+    img.src = 'https://api.qrserver.com/v1/create-qr-code/' + '?size=' + px + 'x' + px + '&data=' + encodeURIComponent(item.code) + '&margin=1';
+    img.onerror = function() { this.style.cssText = 'width:80px;height:80px;background:#eee;display:block;'; this.title = 'QR取得失敗: ' + item.code; };
     div.appendChild(img);
 
     if (item.cancelled) {
-      var warn = document.createElement('div');
-      warn.className = 'cancelled-badge';
-      warn.textContent = '⚠️ 取消済みの依頼です';
-      div.appendChild(warn);
+      var w = document.createElement('div'); w.className = 'cancelled-badge'; w.textContent = '⚠️ 取消済みの依頼です'; div.appendChild(w);
+    } else if (isRetire) {
+      var rb = document.createElement('div'); rb.className = 'retire-badge'; rb.textContent = '🗑 要撤去（剥がす・使用不可）'; div.appendChild(rb);
     } else if (item.labelStatus === '要貼付') {
-      var nb = document.createElement('div');
-      nb.className = 'need-badge';
-      nb.textContent = '🆕 要貼付';
-      div.appendChild(nb);
+      var nb = document.createElement('div'); nb.className = 'need-badge'; nb.textContent = '🆕 要貼付'; div.appendChild(nb);
     }
 
-    var code = document.createElement('div');
-    code.className = 'label-code';
-    code.textContent = item.code;
-    div.appendChild(code);
-
-    var name = document.createElement('div');
-    name.className = 'label-name';
-    name.textContent = item.name || '';
-    div.appendChild(name);
+    var code = document.createElement('div'); code.className = 'label-code'; code.textContent = item.code; div.appendChild(code);
+    var name = document.createElement('div'); name.className = 'label-name'; name.textContent = item.name || ''; div.appendChild(name);
 
     var checkRow = document.createElement('label');
     checkRow.className = 'label-check-row print-hide';
     var checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.checked = checkedByCode[item.code];
-    checkbox.onchange = function() {
-      checkedByCode[item.code] = checkbox.checked;
-      div.classList.toggle('unchecked', !checkbox.checked);
-    };
+    checkbox.onchange = function() { checkedByCode[item.code] = checkbox.checked; div.classList.toggle('unchecked', !checkbox.checked); };
     checkRow.appendChild(checkbox);
-    checkRow.appendChild(document.createTextNode('印刷する'));
+    checkRow.appendChild(document.createTextNode(isRetire ? '（印刷対象外）' : '印刷する'));
     div.appendChild(checkRow);
 
     var sel = document.createElement('select');
     sel.className = 'size-select print-hide';
     [['xs', '極小 1cm'], ['s', '小 2cm'], ['m', '中 4.5cm'], ['l', '大 A4半分']].forEach(function(pair) {
-      var opt = document.createElement('option');
-      opt.value = pair[0]; opt.textContent = pair[1];
-      if (pair[0] === size) opt.selected = true;
-      sel.appendChild(opt);
+      var opt = document.createElement('option'); opt.value = pair[0]; opt.textContent = pair[1]; if (pair[0] === size) opt.selected = true; sel.appendChild(opt);
     });
-    sel.onchange = function() {
-      sizeByCode[item.code] = sel.value;
-      render();
-    };
+    sel.onchange = function() { sizeByCode[item.code] = sel.value; render(); };
     div.appendChild(sel);
 
     grids[size].appendChild(div);

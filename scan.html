@@ -378,6 +378,11 @@
       background: #fff; color: #333;
       box-shadow: 0 4px 14px rgba(0,0,0,0.35);
     }
+    
+    .rc-tap { cursor: pointer; border: 1px dashed #ddd; border-radius: 8px; padding: 6px 8px; font-size: 12px; color: #333; white-space: pre-wrap; word-break: break-word; min-height: 18px; }
+    .rc-tap.empty { color: #aaa; font-style: italic; }
+    #scanRemarksTextarea { min-height: 150px; resize: vertical; }
+    
   </style>
 </head>
 <body>
@@ -466,6 +471,16 @@
     </div>
   </div>
 
+  <div id="scanRemarksModal" class="modal-overlay" style="z-index:5000;">
+    <div class="modal-box">
+      <div class="modal-title">📝 備考（取得場所など）</div>
+      <textarea id="scanRemarksTextarea" class="modal-input" placeholder="取得場所・メモを記入（枠の外をタップで保存して閉じる）"></textarea>
+      <div class="modal-buttons">
+        <button class="modal-btn modal-btn-confirm" style="flex:1" onclick="closeScanRemarks(true)">保存して閉じる</button>
+      </div>
+    </div>
+  </div>
+  
   <!-- ヘッダー -->
   <div class="header-panel" id="headerPanel" onclick="openTeamSelectModal()" style="cursor:pointer;">
     <div class="header-left">
@@ -957,7 +972,7 @@
                     ${done ? '✅' : '⬜'} ${escapeHtml(c.code)}
                     <span class="code-row-lc">${lcInfo.icon} ${lcInfo.label}</span>
                   </button>
-                  <input type="text" class="code-row-remarks" list="rentalRemarkDatalist" placeholder="📝 備考(取得場所など)" value="${escapeHtml(c.remarks || '')}" data-code="${escapeHtml(c.code)}">
+                  <div class="code-row-remarks rc-tap${c.remarks ? '' : ' empty'}" data-code="${escapeHtml(c.code)}">${c.remarks ? escapeHtml(c.remarks) : '📝 タップで記入'}</div>
                 </div>`;
             }).join('');
           } else {
@@ -1127,7 +1142,7 @@
                   <span class="hier-check">${cIcon}</span>
                   <span>${escapeHtml(g.childLabelOf(l))}(${l.planSum})${codesText ? `<span class="hier-c-codes">${escapeHtml(codesText)}</span>` : ''}</span>
                 </button>
-                <input type="text" class="hier-child-remarks" list="rentalRemarkDatalist" placeholder="📝 出どころ等" value="${escapeHtml(l.remarksValue)}" data-g="${gi}" data-p="${pi}" data-l="${li}">
+                <div class="hier-child-remarks rc-tap${l.remarksValue ? '' : ' empty'}" data-g="${gi}" data-p="${pi}" data-l="${li}">${l.remarksValue ? escapeHtml(l.remarksValue) : '📝 出どころ等'}</div>
               </div>`;
           });
           html += `</div></div>`;
@@ -1229,31 +1244,37 @@
     // 🆕 依頼一覧: コードをタップ → 未検品なら選択中モードに更新、既に選択中モードならタップでもう一度→直前の状態に戻す
     //     (「依頼ごと(従来)」タブ用)。加えて、階層タブ(部門ごと/備品ごと)の親子タップもここで拾う。
     const reqListPrevLifecycle = {};
-    document.getElementById('requestListBody').addEventListener('click', async function(e) {
+        document.getElementById('requestListBody').addEventListener('click', async function(e) {
+      // 🆕 備考(依頼ごとタブ)のタップ → ポップアップ
+      const rcell = e.target.closest('.code-row-remarks');
+      if (rcell) {
+        const code = rcell.dataset.code;
+        let cur = '';
+        (lastRequestListData || []).forEach(function(req){ (req.items || []).forEach(function(it){ (it.codes || []).forEach(function(c){ if (c.code === code) cur = c.remarks || ''; }); }); });
+        openScanRemarks(cur, function(v){ saveRemarks(code, v); renderRequestListBody(); });
+        return;
+      }
+      // 🆕 備考(階層タブ)のタップ → ポップアップ
+      const hcell = e.target.closest('.hier-child-remarks');
+      if (hcell) {
+        const gi = parseInt(hcell.getAttribute('data-g'), 10), pi = parseInt(hcell.getAttribute('data-p'), 10), li = parseInt(hcell.getAttribute('data-l'), 10);
+        const g = currentHierGroups[gi]; if (!g) return;
+        const p = g.parents[pi]; if (!p) return;
+        const l = p.leaves[li]; if (!l) return;
+        openScanRemarks(l.remarksValue, function(v){ onHierRemarksChange(gi, pi, li, v); });
+        return;
+      }
+
       const parentBtn = e.target.closest('.hier-parent-tap');
-      if (parentBtn) {
-        onHierParentTap(parseInt(parentBtn.getAttribute('data-g'), 10), parseInt(parentBtn.getAttribute('data-p'), 10));
-        return;
-      }
+      if (parentBtn) { onHierParentTap(parseInt(parentBtn.getAttribute('data-g'), 10), parseInt(parentBtn.getAttribute('data-p'), 10)); return; }
       const childBtn = e.target.closest('.hier-child-tap');
-      if (childBtn) {
-        onHierChildTap(
-          parseInt(childBtn.getAttribute('data-g'), 10),
-          parseInt(childBtn.getAttribute('data-p'), 10),
-          parseInt(childBtn.getAttribute('data-l'), 10)
-        );
-        return;
-      }
+      if (childBtn) { onHierChildTap(parseInt(childBtn.getAttribute('data-g'), 10), parseInt(childBtn.getAttribute('data-p'), 10), parseInt(childBtn.getAttribute('data-l'), 10)); return; }
 
       const btn = e.target.closest('.code-row-tap');
       if (!btn) return;
       const code = btn.dataset.code;
       let currentLc = '未処理';
-      (lastRequestListData || []).forEach(req => {
-        (req.items || []).forEach(it => {
-          (it.codes || []).forEach(c => { if (c.code === code) currentLc = c.lifecycle; });
-        });
-      });
+      (lastRequestListData || []).forEach(function(req){ (req.items || []).forEach(function(it){ (it.codes || []).forEach(function(c){ if (c.code === code) currentLc = c.lifecycle; }); }); });
       btn.disabled = true;
       let ok;
       if (currentLc === currentLifecycleMode) {
@@ -1271,18 +1292,8 @@
     });
 
     // 🆕 依頼一覧の備考入力(フォーカスが外れたら保存)。階層タブの子行備考もここで拾う。
-    document.getElementById('requestListBody').addEventListener('focusout', function(e) {
-      if (e.target.classList.contains('hier-child-remarks')) {
-        onHierRemarksChange(
-          parseInt(e.target.getAttribute('data-g'), 10),
-          parseInt(e.target.getAttribute('data-p'), 10),
-          parseInt(e.target.getAttribute('data-l'), 10),
-          e.target.value
-        );
-        return;
-      }
-      if (!e.target.classList.contains('code-row-remarks')) return;
-      saveRemarks(e.target.dataset.code, e.target.value);
+        document.getElementById('requestListBody').addEventListener('focusout', function(e) {
+      // 備考はポップアップ保存に移行したため、ここでは何もしない（将来別入力を足す場合の受け皿）
     });
 
     /* =========================================================
@@ -1562,6 +1573,27 @@
       toast.style.display = "block";
       setTimeout(() => { toast.style.display = "none"; }, 2400);
     }
+
+    // 🆕 依頼一覧の備考ポップアップ
+    let _scanRmSave = null, _scanRmOrig = '';
+    function openScanRemarks(value, onSave) {
+      _scanRmOrig = value || '';
+      const ta = document.getElementById('scanRemarksTextarea');
+      ta.value = _scanRmOrig;
+      _scanRmSave = onSave;
+      document.getElementById('scanRemarksModal').classList.add('show');
+      setTimeout(function(){ ta.focus(); }, 50);
+    }
+    function closeScanRemarks(save) {
+      const ov = document.getElementById('scanRemarksModal');
+      if (!ov.classList.contains('show')) return;
+      const val = document.getElementById('scanRemarksTextarea').value;
+      ov.classList.remove('show');
+      const cb = _scanRmSave; _scanRmSave = null;
+      if (save && cb && val !== _scanRmOrig) cb(val);
+    }
+    document.getElementById('scanRemarksModal').addEventListener('click', function(e){ if (e.target === this) closeScanRemarks(true); });
+    
   </script>
 </body>
 </html>
